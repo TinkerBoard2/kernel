@@ -9,6 +9,7 @@ obj-$(CONFIG_RTL8723BU) += rtl8723bu/
 obj-$(CONFIG_RTL8723CS)	+= rtl8723cs/
 obj-$(CONFIG_RTL8723DS) += rtl8723ds/
 obj-$(CONFIG_RTL8812AU)	+= rtl8812AU_8821AU_linux/
+obj-$(CONFIG_RTL8814AU)	+= rtl8814au/
 obj-$(CONFIG_RTL8822BE)	+= rtl8822be/
 obj-$(CONFIG_RTL8822CE)	+= rtl8822ce/
 obj-$(CONFIG_SSV6051)	+= ssv6xxx/
