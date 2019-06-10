@@ -10209,7 +10209,7 @@ void issue_action_BSSCoexistPacket(_adapter *padapter)
 	u8 InfoContent[16] = {0};
 	u8 ICS[8][15];
 #ifdef CONFIG_80211N_HT
-	if ((pmlmepriv->num_FortyMHzIntolerant == 0) || (pmlmepriv->num_sta_no_ht == 0))
+	if ((pmlmepriv->num_FortyMHzIntolerant == 0) && (pmlmepriv->num_sta_no_ht == 0))
 		return;
 
 	if (_TRUE == pmlmeinfo->bwmode_updated)
@@ -10255,16 +10255,14 @@ void issue_action_BSSCoexistPacket(_adapter *padapter)
 	pframe = rtw_set_fixed_ie(pframe, 1, &(action), &(pattrib->pktlen));
 
 
-	/*  */
-	if (pmlmepriv->num_FortyMHzIntolerant > 0) {
+	/* TODO calculate 40Mhz intolerant via ch and ch offset */
+	/* if (pmlmepriv->num_FortyMHzIntolerant > 0) */
+	{
 		u8 iedata = 0;
 
 		iedata |= BIT(2);/* 20 MHz BSS Width Request */
-
 		pframe = rtw_set_ie(pframe, EID_BSSCoexistence,  1, &iedata, &(pattrib->pktlen));
-
 	}
-
 
 	/*  */
 	_rtw_memset(ICS, 0, sizeof(ICS));
