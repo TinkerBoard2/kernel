@@ -2823,6 +2823,13 @@ static void _debug_dlfw_fail(struct dvobj_priv *d)
 		  __FUNCTION__, addr, v32);
 }
 
+static void _init_trx_cfg_drv(struct dvobj_priv *d)
+{
+#ifdef CONFIG_PCI_HCI
+	rtw_hal_irp_reset(dvobj_get_primary_adapter(d));
+#endif
+}
+
 /*
  * Description:
  *	Downlaod Firmware Flow
@@ -2918,6 +2925,7 @@ resume_tx:
 		err = rtw_halmac_rx_agg_switch(d, _TRUE);
 		if (err)
 			return -1;
+		_init_trx_cfg_drv(d);
 
 		/* 9. Send General Info */
 		err = _send_general_info(d);
@@ -2975,6 +2983,7 @@ static int init_mac_flow(struct dvobj_priv *d)
 	status = api->halmac_init_mac_cfg(halmac, trx_mode);
 	if (status != HALMAC_RET_SUCCESS)
 		goto out;
+	_init_trx_cfg_drv(d);
 
 	err = rtw_halmac_rx_agg_switch(d, _TRUE);
 	if (err)
