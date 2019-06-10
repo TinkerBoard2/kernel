@@ -1851,11 +1851,12 @@ void hw_var_set_dl_rsvd_page(PADAPTER adapter, u8 mstatus)
 		rtw_hal_set_hwreg(adapter, HW_VAR_BCN_VALID, NULL);
 		rtw_hal_set_hwreg(adapter, HW_VAR_DL_BCN_SEL, NULL);
 
+		rtw_hal_set_fw_rsvd_page(adapter, 0);
 		DLBcnCount = 0;
 		poll = 0;
 		do {
 			/* download rsvd page. */
-			rtw_hal_set_fw_rsvd_page(adapter, 0);
+			//rtw_hal_set_fw_rsvd_page(adapter, 0);
 			DLBcnCount++;
 			do {
 				rtw_yield_os();
