@@ -2330,7 +2330,14 @@ int rtw_halmac_poweron(struct dvobj_priv *d)
 	PHALMAC_API api;
 	HALMAC_RET_STATUS status;
 	int err = -1;
-
+#if defined(CONFIG_PCI_HCI) && defined(CONFIG_RTL8822B)
+	struct _ADAPTER *a;
+	u8 v8;
+	u32 addr;
+ 
+ 
+	a = dvobj_get_primary_adapter(d);
+#endif
 
 	halmac = dvobj_to_halmac(d);
 	if (!halmac)
@@ -2348,8 +2355,42 @@ int rtw_halmac_poweron(struct dvobj_priv *d)
 		goto out;
 #endif /* CONFIG_SDIO_HCI */
 
+#if defined(CONFIG_PCI_HCI) && defined(CONFIG_RTL8822B)
+	addr = 0x3F3;
+	v8 = rtw_read8(a, addr);
+	RTW_PRINT("%s: 0x%X = 0x%02x\n", __FUNCTION__, addr, v8);
+	/* are we in pcie debug mode? */
+	if (!(v8 & BIT(2))) {
+		RTW_PRINT("%s: Enable pcie debug mode\n", __FUNCTION__);
+		v8 |= BIT(2);
+		v8 = rtw_write8(a, addr, v8);
+	}
+#endif
+
 	status = api->halmac_mac_power_switch(halmac, HALMAC_MAC_POWER_ON);
 	if (HALMAC_RET_PWR_UNCHANGE == status) {
+
+#if defined(CONFIG_PCI_HCI) && defined(CONFIG_RTL8822B)
+		addr = 0x3F3;
+		v8 = rtw_read8(a, addr);
+		RTW_PRINT("%s: 0x%X = 0x%02x\n", __FUNCTION__, addr, v8);
+
+		/* are we in pcie debug mode? */
+		if (!(v8 & BIT(2))) {
+			RTW_PRINT("%s: Enable pcie debug mode\n", __FUNCTION__);
+			v8 |= BIT(2);
+			v8 = rtw_write8(a, addr, v8);
+		} else if (v8 & BIT(0)) {
+			/* DMA stuck */
+			addr = 0x1350;
+			v8 = rtw_read8(a, addr);
+			RTW_PRINT("%s: 0x%X = 0x%02x\n", __FUNCTION__, addr, v8);
+			RTW_PRINT("%s: recover DMA stuck\n", __FUNCTION__);
+			v8 |= BIT(6);
+			v8 = rtw_write8(a, addr, v8);
+			RTW_PRINT("%s: 0x%X = 0x%02x\n", __FUNCTION__, addr, v8);
+		}
+#endif
 		/*
 		 * Work around for warm reboot but device not power off,
 		 * but it would also fall into this case when auto power on is enabled.
@@ -2388,7 +2429,13 @@ int rtw_halmac_poweroff(struct dvobj_priv *d)
 	PHALMAC_API api;
 	HALMAC_RET_STATUS status;
 	int err = -1;
-
+#if defined(CONFIG_PCI_HCI) && defined(CONFIG_RTL8822B)
+	struct _ADAPTER *a;
+	u8 v8;
+	u32 addr;
+  
+	a = dvobj_get_primary_adapter(d);
+#endif
 
 	halmac = dvobj_to_halmac(d);
 	if (!halmac)
