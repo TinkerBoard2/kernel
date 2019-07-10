@@ -920,6 +920,7 @@ void pm_system_irq_wakeup(unsigned int irq_number)
 {
 	if (pm_wakeup_irq == 0) {
 		pm_wakeup_irq = irq_number;
+		pr_info("PM: Device wakeup by irq %d\n", pm_wakeup_irq);
 		pm_system_wakeup();
 	}
 }
