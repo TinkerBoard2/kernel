@@ -982,8 +982,8 @@ static int __maybe_unused dwc3_rockchip_suspend(struct device *dev)
 		 * in power on state in this case.
 		 */
 		dwc->link_state = dwc3_gadget_get_link_state(dwc);
-		if (dwc->link_state == DWC3_LINK_STATE_RX_DET)
-			phy_power_off(dwc->usb3_generic_phy);
+		//if (dwc->link_state == DWC3_LINK_STATE_RX_DET)
+		//	phy_power_off(dwc->usb3_generic_phy);
 	}
 
 	return 0;
