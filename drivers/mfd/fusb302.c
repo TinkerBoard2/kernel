@@ -374,6 +374,8 @@ static void platform_set_vbus_lvl_enable(struct fusb30x_chip *chip, int vbus_5v,
 		msleep(20);
 		gpiod_set_value(chip->gpio_discharge, 0);
 	}
+
+	dev_dbg(chip->dev, "fusb302 set vbus to %s\n", vbus_5v ? "enable" : "disable");
 }
 
 static void set_state(struct fusb30x_chip *chip, enum connection_state state)
@@ -615,7 +617,7 @@ static int tcpm_set_msg_header(struct fusb30x_chip *chip)
 			   (chip->notify.power_role << 7) |
 			   (chip->notify.data_role << 4));
 	regmap_update_bits(chip->regmap, FUSB_REG_SWITCHES1,
-			   SWITCHES1_SPECREV, 2 << 5);
+			   SWITCHES1_SPECREV, chip->spec_rev << 5);
 	return 0;
 }
 
@@ -677,6 +679,8 @@ static int tcpm_set_vconn(struct fusb30x_chip *chip, int enable)
 			   SWITCHES0_VCONN_CC1 | SWITCHES0_VCONN_CC2,
 			   val);
 	chip->vconn_enabled = (bool)enable;
+	dev_dbg(chip->dev, "fusb302 set vconn to %s\n", enable ? "enable" : "disable");
+
 	return 0;
 }
 
@@ -849,6 +853,8 @@ static void tcpc_alert(struct fusb30x_chip *chip, u32 *evt)
 		*evt |= EVENT_RX;
 
 	if (interrupta & INTERRUPTA_HARDRST) {
+		chip->spec_rev = (chip->spec_rev == 2 ? 1 : 2);
+		dev_info(chip->dev, "Received hard reset, change spec rev to %d\n", chip->spec_rev);
 		fusb302_pd_reset(chip);
 		pd_execute_hard_reset(chip);
 		*evt |= EVENT_REC_RESET;
@@ -1574,6 +1580,7 @@ static void fusb_state_unattached(struct fusb30x_chip *chip, u32 evt)
 {
 	chip->notify.is_cc_connected = false;
 	chip->is_pd_support = false;
+	chip->spec_rev = 2;
 
 	if ((evt & EVENT_CC) && chip->cc_state) {
 		if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_UFP)
@@ -1691,6 +1698,9 @@ static void fusb_state_attach_wait_source(struct fusb30x_chip *chip, u32 evt)
 				else
 					set_state(chip, attached_source);
 			} else {
+				if ((!chip->cc1) || (!chip->cc2)) {
+					dev_info(chip->dev, "cc1 = %d, cc2=%d\n", chip->cc1, chip->cc2);
+				}
 				set_state_unattached(chip);
 				return;
 			}
@@ -2028,6 +2038,7 @@ static void fusb_state_src_transition_default(struct fusb30x_chip *chip,
 	switch (chip->sub_state) {
 	case 0:
 		chip->notify.is_pd_connected = false;
+		tcpm_set_vconn(chip, 0);
 		platform_set_vbus_lvl_enable(chip, 0, 0);
 		if (chip->notify.data_role)
 			regmap_update_bits(chip->regmap,
@@ -2048,6 +2059,7 @@ static void fusb_state_src_transition_default(struct fusb30x_chip *chip,
 	default:
 		if (evt & EVENT_TIMER_STATE) {
 			platform_set_vbus_lvl_enable(chip, 1, 0);
+			tcpm_set_vconn(chip, 1);
 			chip->timer_mux = T_NO_RESPONSE;
 			fusb_timer_start(&chip->timer_mux_machine,
 					 chip->timer_mux);
@@ -2318,7 +2330,7 @@ static void fusb_state_drs_evaluate(struct fusb30x_chip *chip, u32 evt)
 static void fusb_state_drs_send_accept(struct fusb30x_chip *chip, u32 evt)
 {
 	fusb_state_send_simple_msg(chip, evt, CMT_ACCEPT, CONTROLMESSAGE,
-				   chip->notify.power_role ?
+				   chip->notify.data_role ?
 				   policy_drs_dfp_change :
 				   policy_drs_ufp_change,
 				   error_recovery);
@@ -3328,6 +3340,8 @@ static int fusb30x_probe(struct i2c_client *client,
 
 	chip->fusb30x_wq = create_workqueue("fusb302_wq");
 	INIT_WORK(&chip->work, fusb302_work_func);
+
+	chip->spec_rev = 2;
 
 	chip->role = ROLE_MODE_NONE;
 	chip->try_role = ROLE_MODE_NONE;
