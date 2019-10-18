@@ -3519,8 +3519,10 @@ static void fusb30x_shutdown(struct i2c_client *client)
 {
 	struct fusb30x_chip *chip = i2c_get_clientdata(client);
 
-	if (chip->gpio_vbus_5v)
+	if (chip->gpio_vbus_5v) {
+		tcpm_set_vconn(chip, 0);
 		gpiod_set_value(chip->gpio_vbus_5v, 0);
+	}
 	if (chip->gpio_discharge) {
 		gpiod_set_value(chip->gpio_discharge, 1);
 		msleep(100);
