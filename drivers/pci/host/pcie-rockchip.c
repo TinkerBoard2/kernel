@@ -659,6 +659,8 @@ static int rockchip_pcie_init_port(struct rockchip_pcie *rockchip)
 	rockchip_pcie_write(rockchip, PCIE_CLIENT_LINK_TRAIN_ENABLE,
 			    PCIE_CLIENT_CONFIG);
 
+	udelay(200);
+
 	gpiod_set_value(rockchip->ep_gpio, 1);
 
 	if (rockchip->wait_ep)
