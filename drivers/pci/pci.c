@@ -862,17 +862,20 @@ int pci_set_power_state(struct pci_dev *dev, pci_power_t state)
 	int error;
 
 	/* bound the state we're entering */
+	dev_info(&dev->dev, "set power state to %d, no d1d2 = %d\n", state, dev->no_d1d2);
 	if (state > PCI_D3cold)
 		state = PCI_D3cold;
 	else if (state < PCI_D0)
 		state = PCI_D0;
-	else if ((state == PCI_D1 || state == PCI_D2) && pci_no_d1d2(dev))
+	else if ((state == PCI_D1 || state == PCI_D2) && pci_no_d1d2(dev)){
+		dev_info(&dev->dev, "set power return\n");
 		/*
 		 * If the device or the parent bridge do not support PCI PM,
 		 * ignore the request if we're doing anything other than putting
 		 * it into D0 (which would only happen on boot).
 		 */
 		return 0;
+	}
 
 	/* Check if we're already there */
 	if (dev->current_state == state)
@@ -2228,14 +2231,14 @@ void pci_pm_init(struct pci_dev *dev)
 			dev->d2_support = true;
 
 		if (dev->d1_support || dev->d2_support)
-			dev_printk(KERN_DEBUG, &dev->dev, "supports%s%s\n",
+			dev_printk(KERN_ERR, &dev->dev, "supports%s%s\n",
 				   dev->d1_support ? " D1" : "",
 				   dev->d2_support ? " D2" : "");
 	}
 
 	pmc &= PCI_PM_CAP_PME_MASK;
 	if (pmc) {
-		dev_printk(KERN_DEBUG, &dev->dev,
+		dev_printk(KERN_ERR, &dev->dev,
 			 "PME# supported from%s%s%s%s%s\n",
 			 (pmc & PCI_PM_CAP_PME_D0) ? " D0" : "",
 			 (pmc & PCI_PM_CAP_PME_D1) ? " D1" : "",

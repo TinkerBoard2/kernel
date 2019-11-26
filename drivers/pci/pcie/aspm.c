@@ -68,7 +68,8 @@ struct pcie_link_state {
 	struct aspm_latency acceptable[8];
 };
 
-static int aspm_disabled, aspm_force;
+static int aspm_disabled = 1;
+static int aspm_force;
 static bool aspm_support_enabled = true;
 static DEFINE_MUTEX(aspm_lock);
 static LIST_HEAD(link_list);
