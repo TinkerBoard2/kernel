@@ -47,6 +47,7 @@ struct temp_opp_table {
  * @devp:		Device-specific system monitor profile
  * @node:		Node in monitor_dev_list
  * @temp_freq_table:	Maximum frequency at different temperature
+ * @volt_adjust_mutex:	A mutex to protect changing voltage.
  * @low_limit:		Limit maximum frequency when low temperature, in Hz
  * @high_limit:		Limit maximum frequency when high temperature, in Hz
  * @max_volt:		Maximum voltage in microvolt
@@ -78,6 +79,7 @@ struct monitor_dev_info {
 	struct monitor_dev_profile *devp;
 	struct list_head node;
 	struct temp_freq_table *temp_freq_table;
+	struct mutex volt_adjust_mutex;
 	unsigned long low_limit;
 	unsigned long high_limit;
 	unsigned long max_volt;
