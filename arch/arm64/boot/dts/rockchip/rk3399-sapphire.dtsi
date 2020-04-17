@@ -352,23 +352,23 @@
 				};
 			};
 
-			vcc1v8_dvp: LDO_REG1 {
+			vcc3v3_dsi: LDO_REG1 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
-				regulator-name = "vcc1v8_dvp";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc3v3_dsi";
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
 			};
 
-			vcc3v0_tp: LDO_REG2 {
+			vcca1v8_hdmi: LDO_REG2 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <3000000>;
-				regulator-max-microvolt = <3000000>;
-				regulator-name = "vcc3v0_tp";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcca1v8_hdmi";
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
@@ -398,12 +398,12 @@
 				};
 			};
 
-			vcca3v0_codec: LDO_REG5 {
+			vcc3v3_csi: LDO_REG5 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <3000000>;
-				regulator-max-microvolt = <3000000>;
-				regulator-name = "vcca3v0_codec";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc3v3_csi";
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
@@ -421,12 +421,12 @@
 				};
 			};
 
-			vcca1v8_codec: LDO_REG7 {
+			vcca0v9_hdmi: LDO_REG7 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
-				regulator-name = "vcca1v8_codec";
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
+				regulator-name = "vcca0v9_hdmi";
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
@@ -498,7 +498,7 @@
 	status = "okay";
 
 	bt656-supply = <&vcc_3v0>;		/* bt656_gpio2ab_ms */
-	audio-supply = <&vcca1v8_codec>;	/* audio_gpio3d4a_ms */
+	audio-supply = <&vcca0v9_hdmi>;	/* audio_gpio3d4a_ms */
 	sdmmc-supply = <&vccio_sd>;		/* sdmmc_gpio4b_ms */
 	gpio1830-supply = <&vcc_3v0>;		/* gpio1833_gpio4cd_ms */
 };
