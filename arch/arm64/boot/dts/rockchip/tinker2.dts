@@ -209,16 +209,24 @@
 };
 
 &hdmi {
-	pinctrl-names = "default";
-	pinctrl-0 = <&hdmi_i2c_xfer>, <&hdmi_cec>;
-	#address-cells = <1>;
-	#size-cells = <0>;
-	#sound-dai-cells = <0>;
 	status = "okay";
+	pinctrl-0 = <&hdmi_i2c_xfer>, <&hdmi_cec>;
+	#sound-dai-cells = <0>;
+	rockchip,phy-table =
+		<74250000  0x8009 0x0004 0x0272>,
+		<165000000 0x802b 0x0004 0x0209>,
+		<297000000 0x8039 0x0005 0x028d>,
+		<594000000 0x8039 0x0000 0x00f6>,
+		<000000000 0x0000 0x0000 0x0000>;
 };
 
 &hdmi_in_vopl {
 	status = "disabled";
+};
+
+&route_hdmi {
+	status = "okay";
+	connect = <&vopb_out_hdmi>;
 };
 
 &i2c1 {
@@ -431,7 +439,7 @@
 
 &vopb {
 	assigned-clocks = <&cru DCLK_VOP0_DIV>;
-	assigned-clock-parents = <&cru PLL_CPLL>;
+	assigned-clock-parents = <&cru PLL_VPLL>;
 	status = "okay";
 };
 
@@ -440,7 +448,7 @@
 };
 
 &vopl {
-	assigned-clocks = <&cru DCLK_VOP0_DIV>;
+	assigned-clocks = <&cru DCLK_VOP1_DIV>;
 	assigned-clock-parents = <&cru PLL_CPLL>;
 	status = "okay";
 };
