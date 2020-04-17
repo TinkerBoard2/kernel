@@ -190,7 +190,7 @@
 };
 
 &edp {
-	status = "okay";
+	status = "disabled";
 	force-hpd;
 
 	ports {
@@ -422,7 +422,7 @@
 };
 
 &route_edp {
-	status = "okay";
+	status = "disabled";
 };
 
 &saradc {
@@ -468,6 +468,10 @@
 				<2 12 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+};
+
+&dmc {
+	status = "disabled";
 };
 
 /* DON'T PUT ANYTHING BELOW HERE.  PUT IT ABOVE PINCTRL */
