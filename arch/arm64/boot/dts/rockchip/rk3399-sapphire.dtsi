@@ -239,38 +239,17 @@
 	i2c-scl-falling-time-ns = <4>;
 	clock-frequency = <400000>;
 
-	vdd_cpu_b: syr827@40 {
-		compatible = "silergy,syr827";
-		reg = <0x40>;
+	vdd_cpu_b: fan53200@60 {
+		compatible = "fcs,fan53200";
+		reg = <0x60>;
 		vin-supply = <&vcc5v0_sys>;
 		regulator-compatible = "fan53555-reg";
 		pinctrl-names = "default";
 		pinctrl-0 = <&vsel1_gpio>;
 		vsel-gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
 		regulator-name = "vdd_cpu_b";
-		regulator-min-microvolt = <712500>;
-		regulator-max-microvolt = <1500000>;
-		regulator-ramp-delay = <1000>;
-		fcs,suspend-voltage-selector = <1>;
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-initial-state = <3>;
-			regulator-state-mem {
-			regulator-off-in-suspend;
-		};
-	};
-
-	vdd_gpu: syr828@41 {
-		compatible = "silergy,syr828";
-		reg = <0x41>;
-		vin-supply = <&vcc5v0_sys>;
-		regulator-compatible = "fan53555-reg";
-		pinctrl-names = "default";
-		pinctrl-0 = <&vsel2_gpio>;
-		vsel-gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
-		regulator-name = "vdd_gpu";
-		regulator-min-microvolt = <712500>;
-		regulator-max-microvolt = <1500000>;
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1250000>;
 		regulator-ramp-delay = <1000>;
 		fcs,suspend-voltage-selector = <1>;
 		regulator-always-on;
@@ -477,6 +456,27 @@
 		int-n-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>;
 		//vbus-5v-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>;
 		status = "okay";
+	};
+
+	vdd_gpu: fan53200@60 {
+		compatible = "fcs,fan53200";
+		reg = <0x60>;
+		vin-supply = <&vcc5v0_sys>;
+		regulator-compatible = "fan53555-reg";
+		pinctrl-names = "default";
+		pinctrl-0 = <&vsel2_gpio>;
+		vsel-gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
+		regulator-name = "vdd_gpu";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1200000>;
+		regulator-ramp-delay = <1000>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-initial-state = <3>;
+			regulator-state-mem {
+			regulator-off-in-suspend;
+		};
 	};
 };
 
