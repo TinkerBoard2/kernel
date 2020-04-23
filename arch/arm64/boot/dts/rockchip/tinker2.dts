@@ -158,6 +158,17 @@
 			linux,default-trigger="mmc1";
 		};
 	};
+
+	board_info: board-info {
+		compatible = "board-info";
+
+		hw-id0 = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
+		hw-id1 = <&gpio4 RK_PA6 GPIO_ACTIVE_HIGH>;
+		hw-id2 = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
+
+		pid-id1 = <&gpio2 RK_PA3 GPIO_ACTIVE_HIGH>;
+		pid-id2 = <&gpio2 RK_PA2 GPIO_ACTIVE_HIGH>;
+	};
 };
 
 &backlight {
