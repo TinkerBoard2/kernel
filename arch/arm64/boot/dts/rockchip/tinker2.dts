@@ -539,6 +539,10 @@
 	status = "disabled";
 };
 
+&fiq_debugger {
+	rockchip,baudrate = <115200>;
+};
+
 /* DON'T PUT ANYTHING BELOW HERE.  PUT IT ABOVE PINCTRL */
 /* DON'T PUT ANYTHING BELOW HERE.  PUT IT ABOVE PINCTRL */
 /* DON'T PUT ANYTHING BELOW HERE.  PUT IT ABOVE PINCTRL */
