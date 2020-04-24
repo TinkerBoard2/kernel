@@ -481,7 +481,7 @@
 };
 
 &i2s0 {
-	status = "okay";
+	status = "disable";
 	rockchip,i2s-broken-burst-len;
 	rockchip,playback-channels = <8>;
 	rockchip,capture-channels = <8>;
@@ -520,7 +520,7 @@
 };
 
 &pwm0 {
-	status = "okay";
+	status = "disable";
 };
 
 &pwm2 {
@@ -552,7 +552,6 @@
 	non-removable;
 	num-slots = <1>;
 	pinctrl-names = "default";
-	pinctrl-0 = <&sdio0_bus4 &sdio0_cmd &sdio0_clk>;
 	sd-uhs-sdr104;
 	status = "okay";
 };

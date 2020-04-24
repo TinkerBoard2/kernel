@@ -171,6 +171,23 @@
 	};
 };
 
+
+&pinctrl {
+	pinctrl-names = "default";
+	pinctrl-0 = <&gpio_init>;
+
+	gpio_init_config {
+                gpio_init: gpio_init {
+                     rockchip,pins =
+                             <1 7 0 &pcfg_pull_none>,
+                             <1 8 0 &pcfg_pull_none>,
+                             <1 9 0 &pcfg_pull_none>,
+                             <1 10 0 &pcfg_pull_none>,
+                             <2 19 0 &pcfg_pull_none>;
+		};
+	};
+};
+
 &backlight {
 	status = "okay";
 	enable-gpios = <&gpio4 29 GPIO_ACTIVE_HIGH>;
@@ -312,6 +329,44 @@
 		compatible = "tinker_ft5406";
 		reg = <0x38>;
 	};
+};
+
+&i2c6 {
+	status = "disable";
+};
+
+&i2c7 {
+	status = "disable";
+};
+
+&spi1 {
+	status = "disable";
+	max-freq = <48000000>; /* spi internal clk, don't modify */
+	spi_dev@0 {
+		compatible = "rockchip,spidev";
+		reg = <0>;
+		spi-max-frequency = <48000000>;
+		spi-lsb-first;
+	};
+};
+
+&spi5 {
+	status = "disable";
+	max-freq = <48000000>;   //spi internal clk, don't modify
+	spi_dev@0 {
+		compatible = "rockchip,spidev";
+		reg = <0>;   //chip select  0:cs0  1:cs1
+		id = <0>;
+		spi-max-frequency = <48000000>;   //spi output clock
+	};
+};
+
+&uart0 {
+	status = "disable";
+};
+
+&uart4 {
+	status = "disable";
 };
 
 &iep {

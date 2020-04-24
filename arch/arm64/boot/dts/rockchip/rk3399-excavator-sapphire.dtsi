@@ -212,7 +212,7 @@
 };
 
 &spdif {
-	status = "okay";
+	status = "disabled";
 	pinctrl-0 = <&spdif_bus>;
 	i2c-scl-rising-time-ns = <450>;
 	i2c-scl-falling-time-ns = <15>;
