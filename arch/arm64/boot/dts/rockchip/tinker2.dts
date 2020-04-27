@@ -173,19 +173,26 @@
 
 
 &pinctrl {
-	pinctrl-names = "default";
-	pinctrl-0 = <&gpio_init>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&gpio_init>;
 
-	gpio_init_config {
+        gpio_init_config {
                 gpio_init: gpio_init {
-                     rockchip,pins =
-                             <1 7 0 &pcfg_pull_none>,
-                             <1 8 0 &pcfg_pull_none>,
-                             <1 9 0 &pcfg_pull_none>,
-                             <1 10 0 &pcfg_pull_none>,
-                             <2 19 0 &pcfg_pull_none>;
-		};
-	};
+			rockchip,pins =
+				<1 7 0 &pcfg_pull_none>,
+				<1 8 0 &pcfg_pull_none>,
+				<1 9 0 &pcfg_pull_none>,
+				<1 10 0 &pcfg_pull_none>,
+				<2 19 0 &pcfg_pull_none>;
+                };
+        };
+
+        testclk {
+                test_clkout2: test-clkout2 {
+			rockchip,pins =
+				<0 8 RK_FUNC_3 &pcfg_pull_none>;
+                };
+        };
 };
 
 &backlight {
@@ -289,6 +296,7 @@
 		reg = <0x36>;
 		clocks = <&cru SCLK_CIF_OUT>;
 		clock-names = "xvclk";
+
 		pinctrl-names = "rockchip,camera_default";
 		pinctrl-0 = <&cif_clkout>;
 
@@ -367,6 +375,14 @@
 
 &uart4 {
 	status = "disable";
+};
+
+&pwm1 {
+        status = "disable";
+};
+
+&pwm3 {
+        status = "disable";
 };
 
 &iep {
@@ -529,7 +545,6 @@
 				<2 7 RK_FUNC_GPIO &pcfg_pull_none>,
 				<2 8 RK_FUNC_GPIO &pcfg_output_high>,
 				<2 9 RK_FUNC_GPIO &pcfg_output_high>,
-				<2 10 RK_FUNC_GPIO &pcfg_output_low>,
 				<2 12 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
