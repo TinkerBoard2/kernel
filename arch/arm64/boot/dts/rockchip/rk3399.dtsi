@@ -789,7 +789,7 @@
 		soc_thermal: soc-thermal {
 			polling-delay-passive = <20>; /* milliseconds */
 			polling-delay = <1000>; /* milliseconds */
-			sustainable-power = <1000>; /* milliwatts */
+			sustainable-power = <1761>; /* milliwatts */
 
 			thermal-sensors = <&tsadc 0>;
 
@@ -805,7 +805,7 @@
 					type = "passive";
 				};
 				soc_crit: soc-crit {
-					temperature = <115000>; /* millicelsius */
+					temperature = <105000>; /* millicelsius */
 					hysteresis = <2000>; /* millicelsius */
 					type = "critical";
 				};
