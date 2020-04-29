@@ -550,10 +550,6 @@
 	};
 };
 
-&dmc {
-	status = "disabled";
-};
-
 &fiq_debugger {
 	rockchip,baudrate = <115200>;
 };
