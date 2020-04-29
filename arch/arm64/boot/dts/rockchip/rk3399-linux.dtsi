@@ -84,6 +84,7 @@
 		rockchip,baudrate = <1500000>;  /* Only 115200 and 1500000 */
 		pinctrl-names = "default";
 		pinctrl-0 = <&uart2c_xfer>;
+		status = "okay";
 	};
 
 	cif_isp0: cif_isp@ff910000 {
