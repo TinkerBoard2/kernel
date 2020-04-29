@@ -104,6 +104,7 @@
 		rockchip,codec = <&cdn_dp 1>;
 	};
 
+/*
 	hdmi_sound: hdmi-sound {
 		status = "okay";
 		compatible = "simple-audio-card";
@@ -117,6 +118,14 @@
 		simple-audio-card,codec {
 			sound-dai = <&hdmi>;
 		};
+	};
+*/
+
+	hdmi_dp_sound: hdmi-dp-sound {
+		status = "okay";
+		compatible = "rockchip,rk3399-hdmi-dp";
+		rockchip,cpu = <&i2s2>;
+		rockchip,codec = <&hdmi>, <&cdn_dp>;
 	};
 
 	spdif-sound {
