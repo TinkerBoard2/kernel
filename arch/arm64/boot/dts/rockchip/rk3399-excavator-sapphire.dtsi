@@ -70,7 +70,7 @@
 	};
 
 	rt5651_sound: rt5651-sound {
-		status = "okay";
+		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "realtek,rt5651-codec";
