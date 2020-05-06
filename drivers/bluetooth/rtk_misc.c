@@ -1327,7 +1327,7 @@ static int load_config(dev_data *dev_entry, u8 **buf, int *length)
 	int len;
 	u8 tmp_buf[32];
 	int file_sz;
-	int retry = 5;
+	int retry = 8;
 
 	config_lists_init();
 	patch_entry = dev_entry->patch_entry;
@@ -1338,8 +1338,8 @@ static int load_config(dev_data *dev_entry, u8 **buf, int *length)
 	while (retry-- > 0) {
 		result = request_firmware(&fw, config_name, &udev->dev);
 		if (result < 0) {
-			RTKBT_INFO("request_firmware failed, add 500ms delay and retry again");
-			msleep(500);
+			RTKBT_INFO("request_firmware failed, add 1s delay and retry again");
+			msleep(1000);
 		} else
 			break;
 	}
