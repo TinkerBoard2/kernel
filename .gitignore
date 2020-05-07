@@ -43,6 +43,7 @@ Module.symvers
 # Top-level generic files
 #
 /boot.img
+/boot_sd.img
 /kernel.img
 /resource.img
 /zboot.img
