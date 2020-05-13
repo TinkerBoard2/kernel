@@ -213,8 +213,8 @@ static struct regval_list ov5647_1296x972[] = {
 	{0x3618, 0x00},		/* analog control */
 	{0x380c, 0x07},		/* HTS = 1896 */
 	{0x380d, 0x68},		/* HTS */
-	{0x380e, 0x05},		/* VTS = 1420 */
-	{0x380f, 0x8c},		/* VTS */
+	{0x380e, 0x06},		/* VTS = 1757 */
+	{0x380f, 0xdd},		/* VTS */
 	{0x3814, 0x31},		/* X INC */
 	{0x3815, 0x31},		/* X INC */
 	{0x3708, 0x64},		/* analog control */
@@ -244,48 +244,6 @@ static struct regval_list ov5647_1296x972[] = {
 	{REG_NULL, 0x00}
 };
 
-static struct regval_list ov5647_1920x1080[] = {
-	{0x0100, 0x00},
-	{0x3035, 0x21},		/* PLL */
-	{0x3036, 0x60},		/* PLL */
-	{0x303c, 0x11},		/* PLL */
-	{0x3821, 0x06},		/* ISP mirror on, Sensor mirror on, H bin on */
-	{0x3820, 0x40},		/* ISP flip off, Sensor flip off, V bin on */
-	{0x3612, 0x59},		/* analog control */
-	{0x3618, 0x00},		/* analog control */
-	{0x380c, 0x08},		/* HTS = 2100 */
-	{0x380d, 0x34},		/* HTS */
-	{0x380e, 0x04},		/* VTS = 1269 */
-	{0x380f, 0xf5},		/* VTS */
-	{0x3814, 0x11},		/* X INC */
-	{0x3815, 0x11},		/* X INC */
-	{0x3708, 0x64},		/* analog control */
-	{0x3709, 0x52},		/* analog control */
-	{0x3808, 0x07},		/* DVPHO = 1920 */
-	{0x3809, 0x80},		/* DVPHO */
-	{0x380a, 0x04},		/* DVPVO = 1080 */
-	{0x380b, 0x38},		/* DVPVO */
-	{0x3800, 0x01},		/* X Start */
-	{0x3801, 0x4c},		/* X Start */
-	{0x3802, 0x01},		/* Y Start */
-	{0x3803, 0xac},		/* Y Start */
-	{0x3804, 0x08},		/* X End */
-	{0x3805, 0xd3},		/* X End */
-	{0x3806, 0x05},		/* Y End */
-	{0x3807, 0xeb},		/* Y End */
-	/* banding filter */
-	{0x3a08, 0x01},		/* B50 */
-	{0x3a09, 0x27},		/* B50 */
-	{0x3a0a, 0x00},		/* B60 */
-	{0x3a0b, 0xf6},		/* B60 */
-	{0x3a0d, 0x04},		/* B60 max */
-	{0x3a0e, 0x03},		/* B50 max */
-	{0x4004, 0x02},		/* black line number */
-	{0x4837, 0x19},		/* MIPI pclk period */
-	{0x0100, 0x01},
-	{REG_NULL, 0x00}
-};
-
 static struct regval_list ov5647_2592x1944[] = {
 	{0x0100, 0x00},
 	{0x3035, 0x21},
@@ -295,8 +253,8 @@ static struct regval_list ov5647_2592x1944[] = {
 	{0x3618, 0x04},
 	{0x380c, 0x0a},
 	{0x380d, 0x8c},
-	{0x380e, 0x07},
-	{0x380f, 0xb6},
+	{0x380e, 0x09},
+	{0x380f, 0xa4},
 	{0x3814, 0x11},
 	{0x3815, 0x11},
 	{0x3708, 0x64},
@@ -331,23 +289,15 @@ static const struct ov5647_mode supported_modes[] = {
 	 .height = 972,
 	 .max_fps = 25,
 	 .hts_def = 0x0768,
-	 .vts_def = 0x058c,
+	 .vts_def = 0x06dd,
 	 .reg_list = ov5647_1296x972,
-	 },
-	{
-	 .width = 1920,
-	 .height = 1080,
-	 .max_fps = 30,
-	 .hts_def = 0x0834,
-	 .vts_def = 0x04f5,
-	 .reg_list = ov5647_1920x1080,
 	 },
 	{
 	 .width = 2592,
 	 .height = 1944,
 	 .max_fps = 15,
 	 .hts_def = 0x0a8c,
-	 .vts_def = 0x07b6,
+	 .vts_def = 0x09a4,
 	 .reg_list = ov5647_2592x1944,
 	 },
 };
