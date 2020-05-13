@@ -123,6 +123,8 @@ struct plat_stmmacenet_data {
 	void (*exit)(struct platform_device *pdev, void *priv);
 	void (*get_eth_addr)(void *priv, unsigned char *addr);
 	void *bsp_priv;
+	int wolirq_io;
+	int wol_irq;
 	int wakeup_enable;
 };
 #endif
