@@ -141,9 +141,7 @@
 	vcc_sd: vcc-sd {
 		compatible = "regulator-fixed";
 		enable-active-high;
-		gpio = <&gpio0 1 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&vcc_sd_h>;
 		regulator-name = "vcc_sd";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
@@ -691,13 +689,6 @@
 		host_vbus_drv: host-vbus-drv {
 			rockchip,pins =
 				<4 25 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
-	vcc_sd {
-		vcc_sd_h: vcc-sd-h {
-			rockchip,pins =
-				<0 1 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
