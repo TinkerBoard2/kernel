@@ -155,7 +155,7 @@
 
 		act-led {
 			gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger="mmc1";
+			linux,default-trigger="mmc0";
 		};
 	};
 
