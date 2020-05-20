@@ -28,7 +28,7 @@
 #define BL_DEBUG 0
 static struct tinker_mcu_data *g_mcu_data[2];
 static int connected[2] = {0, 0};
-static int lcd_bright_level[2] = {0, 0};
+static int lcd_bright_level[2] = {-1, -1};
 static struct backlight_device *bl[2] = {NULL, NULL};
 
 #define MAX_BRIGHENESS 		(255)
@@ -155,11 +155,13 @@ int tinker_mcu_set_bright(int bright, int dsi_id)
 	unsigned char cmd[2];
 	int ret;
 
+	LOG_INFO("tinker_mcu_set_bright = 0x%x connected[%d]=%d\n", bright, dsi_id, connected[dsi_id]);
 	if (!connected[dsi_id])
 		return -ENODEV;
 
-        if (lcd_bright_level[dsi_id] == bright)
-		return 0;
+	LOG_INFO("tinker_mcu_set_bright  lcd_bright_level[%d]=%d bright=%d\n", dsi_id, lcd_bright_level[dsi_id], bright);
+	//if (lcd_bright_level[dsi_id] == bright)
+		//return 0;
 	if (bright > MAX_BRIGHENESS  || bright < 0)
 		return -EINVAL;
 
@@ -337,6 +339,7 @@ static int tinker_mcu_probe(struct i2c_client *client,
 		dev_err(&client->dev, "Failed to create tinker_mcu_bl sysfs files %d\n", ret);
 		return ret;
 	}
+
 	return 0;
 
 error:

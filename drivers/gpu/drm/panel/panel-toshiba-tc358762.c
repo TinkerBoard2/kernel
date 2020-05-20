@@ -189,11 +189,17 @@ extern int tinker_mcu_set_bright(int bright, int dsi_id);
 static int tc358762_disable(struct drm_panel *panel)
 {
 	struct tc358762 *p = to_tc358762(panel);
+	static bool first_time_disabled = true;
 
 	if (!p->enabled)
 		return 0;
 
 	printk("panel disable\n");
+
+	if (first_time_disabled) {
+		tinker_mcu_set_bright(11, p->dsi_id);
+		first_time_disabled = false;
+	}
 
 	if (p->backlight) {
 		p->backlight->props.power = FB_BLANK_POWERDOWN;
@@ -602,6 +608,10 @@ int tc358762_dsi_remove(struct mipi_dsi_device *dsi)
 
 void tc358762_dsi_shutdown(struct mipi_dsi_device *dsi)
 {
+	struct device_node *np = dsi->dev.of_node;
+	int dsi_id = of_alias_get_id(np->parent, "dsi");
+
+	tinker_mcu_set_bright(11, dsi_id);
 	tc358762_shutdown(&dsi->dev);
 }
 
