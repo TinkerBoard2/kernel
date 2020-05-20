@@ -674,7 +674,7 @@ static int rockchip_pcie_init_port(struct rockchip_pcie *rockchip)
 		dev_err(dev, "PCIe link training gen1 timeout!\n");
 		return -ETIMEDOUT;
 	}
-
+/*
 	err = readl_poll_timeout(rockchip->apb_base + PCIE_CLIENT_DEBUG_OUT_0,
 				 status, PCIE_LINK_IS_L0(status), 20,
 				 timeouts * USEC_PER_MSEC);
@@ -682,7 +682,7 @@ static int rockchip_pcie_init_port(struct rockchip_pcie *rockchip)
 		dev_err(dev, "LTSSM is not L0!\n");
 		return -ETIMEDOUT;
 	}
-
+*/
 	if (rockchip->link_gen == 2) {
 		/*
 		 * Enable retrain for gen2. This should be configured only after
