@@ -155,8 +155,8 @@ int tinker_mcu_screen_power_up(int dsi_id)
 		return -ENODEV;
 
 	LOG_INFO("\n");
-	tinker_mcu_screen_power_off(dsi_id);
-	msleep(800);
+	//tinker_mcu_screen_power_off(dsi_id);
+	//msleep(800);
 	send_cmds(g_mcu_data[dsi_id]->client, "8501");
 	send_cmds(g_mcu_data[dsi_id]->client, "8104");
 
@@ -353,6 +353,8 @@ static int tinker_mcu_probe(struct i2c_client *client,
 		dev_err(&client->dev, "Failed to create tinker_mcu_bl sysfs files %d\n", ret);
 		return ret;
 	}
+
+	tinker_mcu_screen_power_off(dsi_id);
 
 	return 0;
 
