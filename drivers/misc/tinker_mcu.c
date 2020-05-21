@@ -135,13 +135,27 @@ error:
 	return ret;
 }
 
-int tinker_mcu_screen_power_up(int dsi_id)
+int tinker_mcu_screen_power_off(int dsi_id)
 {
 	if (!connected[dsi_id])
 		return -ENODEV;
 
 	LOG_INFO("\n");
 	send_cmds(g_mcu_data[dsi_id]->client, "8500");
+	msleep(10);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tinker_mcu_screen_power_off);
+
+int tinker_mcu_screen_power_up(int dsi_id)
+{
+
+	if (!connected[dsi_id])
+		return -ENODEV;
+
+	LOG_INFO("\n");
+	tinker_mcu_screen_power_off(dsi_id);
 	msleep(800);
 	send_cmds(g_mcu_data[dsi_id]->client, "8501");
 	send_cmds(g_mcu_data[dsi_id]->client, "8104");

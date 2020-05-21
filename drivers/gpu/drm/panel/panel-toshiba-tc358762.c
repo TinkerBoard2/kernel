@@ -281,6 +281,7 @@ static int tc358762_dsi_init(struct tc358762 *p)
 
 extern struct backlight_device * tinker_mcu_get_backlightdev(int dsi_id);
 extern void tinker_mcu_screen_power_up(int dsi_id);
+extern int tinker_mcu_screen_power_off(int dsi_id);
 extern void tinker_ft5406_start_polling(int dsi_id);
 
 static int tc358762_prepare(struct drm_panel *panel)
@@ -613,6 +614,7 @@ void tc358762_dsi_shutdown(struct mipi_dsi_device *dsi)
 
 	tinker_mcu_set_bright(11, dsi_id);
 	tc358762_shutdown(&dsi->dev);
+	tinker_mcu_screen_power_off(dsi_id);
 }
 
 static struct mipi_dsi_driver tc358762_dsi_driver = {
