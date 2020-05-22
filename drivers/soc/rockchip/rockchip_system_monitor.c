@@ -676,6 +676,19 @@ static int monitor_device_parse_dt(struct device *dev,
 	return ret;
 }
 
+int rockchip_monitor_opp_set_rate(struct monitor_dev_info *info,
+				  unsigned long target_freq)
+{
+	int ret = 0;
+
+	mutex_lock(&info->volt_adjust_mutex);
+	ret = dev_pm_opp_set_rate(info->dev, target_freq);
+	mutex_unlock(&info->volt_adjust_mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL(rockchip_monitor_opp_set_rate);
+
 int rockchip_monitor_cpu_low_temp_adjust(struct monitor_dev_info *info,
 					 bool is_low)
 {
@@ -1379,6 +1392,8 @@ static int rockchip_monitor_reboot_notifier(struct notifier_block *nb,
 					     unsigned long action, void *ptr)
 {
 	rockchip_set_system_status(SYS_STATUS_REBOOT);
+	if (system_monitor->tz)
+		cancel_delayed_work_sync(&system_monitor->thermal_work);
 
 	return NOTIFY_OK;
 }

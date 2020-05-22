@@ -126,6 +126,8 @@ int rockchip_monitor_suspend_low_temp_adjust(struct monitor_dev_info *info);
 int
 rockchip_system_monitor_adjust_cdev_state(struct thermal_cooling_device *cdev,
 					  int temp, unsigned long *state);
+int rockchip_monitor_opp_set_rate(struct monitor_dev_info *info,
+				  unsigned long target_freq);
 #else
 static inline struct monitor_dev_info *
 rockchip_system_monitor_register(struct device *dev,
@@ -178,6 +180,11 @@ rockchip_system_monitor_adjust_cdev_state(struct thermal_cooling_device *cdev,
 	return 0;
 }
 
+static inline int rockchip_monitor_opp_set_rate(struct monitor_dev_info *info,
+						unsigned long target_freq)
+{
+	return 0;
+}
 #endif /* CONFIG_ROCKCHIP_SYSTEM_MONITOR */
 
 #endif

@@ -54,20 +54,12 @@ static struct freq_attr *cpufreq_dt_attr[] = {
 static int set_target(struct cpufreq_policy *policy, unsigned int index)
 {
 	struct private_data *priv = policy->driver_data;
+#ifdef CONFIG_ROCKCHIP_SYSTEM_MONITOR
+	unsigned long target_freq = policy->freq_table[index].frequency * 1000;
 
-#ifdef CONFIG_ARCH_ROCKCHIP
-	struct monitor_dev_info *info = priv->mdev_info;
-	int ret = 0;
-
-	if (info) {
-		mutex_lock(&info->volt_adjust_mutex);
-		ret = dev_pm_opp_set_rate(priv->cpu_dev,
-					  policy->freq_table[index].frequency *
-					  1000);
-		mutex_unlock(&info->volt_adjust_mutex);
-
-		return ret;
-	}
+	if (priv->mdev_info)
+		return rockchip_monitor_opp_set_rate(priv->mdev_info,
+						     target_freq);
 #endif
 	return dev_pm_opp_set_rate(priv->cpu_dev,
 				   policy->freq_table[index].frequency * 1000);

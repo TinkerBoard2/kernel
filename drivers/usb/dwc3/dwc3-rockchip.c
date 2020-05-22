@@ -608,12 +608,13 @@ disconnect:
 				dev_warn(rockchip->dev, "Peripheral disconnect timeout\n");
 			} else if (val == 1 && dwc->connected) {
 				/*
-				 * Power usage count has been decreased to 1, but peripheral
-				 * disconnect flag was not set, there maybe something wrong
-				 * with the controller, like the Disconnect Event was missed
-				 * and so on, let disconnect manually.
+				 * Power usage count has been decreased to 1,
+				 * but peripheral disconnect flag was not set,
+				 * there maybe something wrong with the
+				 * controller, like the Disconnect Event was
+				 * missed and so on, let disconnect manually.
 				 */
-				dev_warn(rockchip->dev, "Peripheral disconnect exceptionally\n");
+				dev_warn(rockchip->dev, "Peripheral disconnect exception\n");
 				spin_lock_irqsave(&dwc->lock, flags);
 				dwc3_gadget_disconnect_interrupt(dwc);
 				spin_unlock_irqrestore(&dwc->lock, flags);
