@@ -519,6 +519,13 @@
 	vref-supply = <&vccadc_ref>;
 };
 
+&sdmmc {
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+};
+
 &vopb {
 	assigned-clocks = <&cru DCLK_VOP0_DIV>;
 	assigned-clock-parents = <&cru PLL_VPLL>;
