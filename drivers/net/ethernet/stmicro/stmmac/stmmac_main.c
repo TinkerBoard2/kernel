@@ -1982,8 +1982,9 @@ static int stmmac_release(struct net_device *dev)
 	if (priv->lpi_irq > 0)
 		free_irq(priv->lpi_irq, dev);
 
-	if (priv->plat->wol_irq > 0)
-		devm_free_irq(priv->device, priv->plat->wol_irq, dev);
+//	Do not free priv-plat-wol_irq here again since it is assigned to priv-wol_irq and freed above.
+//	if (priv->plat->wol_irq > 0)
+//		devm_free_irq(priv->device, priv->plat->wol_irq, dev);
 	if (priv->plat->wolirq_io > 0)
 		devm_gpio_free(priv->device, priv->plat->wolirq_io);
 
