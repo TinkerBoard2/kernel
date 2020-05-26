@@ -966,7 +966,7 @@ static int ov5647_probe(struct i2c_client *client,
 
 	ret = ov5647_detect(sd);
 	if (ret < 0)
-		goto error;
+		dev_warn(dev, "Failed to detect device\n");
 
 	memset(facing, 0, sizeof(facing));
 	if (strcmp(sensor->module_facing, "back") == 0)
