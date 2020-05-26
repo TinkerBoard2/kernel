@@ -367,7 +367,7 @@ enum role_mode {
 #define T_SRC_RECOVER		830
 #define T_TYPEC_SEND_SOURCECAP	100
 #define T_SENDER_RESPONSE	30
-#define T_SRC_TRANSITION	30
+#define T_SRC_TRANSITION	10
 #define T_TYPEC_SINK_WAIT_CAP	500
 #define T_PS_TRANSITION		500
 #define T_BMC_TIMEOUT		5
@@ -523,6 +523,8 @@ struct fusb30x_chip {
 	u16 rec_head;
 	int msg_id;
 	enum tx_state tx_state;
+	bool rx_pending;
+	bool vdm_pending;
 	int hardrst_count;
 	u32 source_power_supply[7];
 	/* 50mv unit */
