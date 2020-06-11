@@ -1723,8 +1723,11 @@ static void fusb_state_attach_wait_source(struct fusb30x_chip *chip, u32 evt)
 				    !chip->try_role_complete)
 					fusb_state_try_attach_set(chip,
 							ROLE_MODE_UFP);
-				else
+				else {
 					set_state(chip, attached_source);
+					chip->timer_mux = T_DISABLED;
+					return;
+				}
 			} else {
 				if ((!chip->cc1) || (!chip->cc2)) {
 					dev_info(chip->dev, "cc1 = %d, cc2=%d\n", chip->cc1, chip->cc2);
