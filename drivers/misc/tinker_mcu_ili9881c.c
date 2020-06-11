@@ -143,6 +143,19 @@ error:
 	return ret;
 }
 
+int tinker_mcu_ili9881c_screen_power_off(int dsi_id)
+{
+	if (!connected[dsi_id])
+		return -ENODEV;
+
+	LOG_INFO("dsi_id =%d\n", dsi_id);
+	send_cmds(g_mcu_ili9881c_data[dsi_id]->client, "0500");
+	msleep(20);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tinker_mcu_ili9881c_screen_power_off);
+
 int tinker_mcu_ili9881c_screen_power_up(int dsi_id)
 {
 	if (!connected[dsi_id])
