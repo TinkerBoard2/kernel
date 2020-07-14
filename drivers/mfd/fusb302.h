@@ -542,6 +542,7 @@ struct fusb30x_chip {
 	int vdm_send_state;
 	u16 vdm_svid[12];
 	int vdm_svid_num;
+	int vdm_enter_just_resume;
 	u32 vdm_id;
 	u8 chip_id;
 	bool vconn_enabled;
