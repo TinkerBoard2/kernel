@@ -754,6 +754,7 @@ static void tcpm_init(struct fusb30x_chip *chip)
 	chip->cc_state = 0;
 	chip->rx_pending = false;
 	chip->vdm_pending = false;
+	chip->vdm_enter_just_resume = 0;
 
 	/* restore default settings */
 	regmap_update_bits(chip->regmap, FUSB_REG_RESET, RESET_SW_RESET,
@@ -1188,6 +1189,18 @@ static void process_vdm_msg(struct fusb30x_chip *chip)
 			chip->notify.dp_status = GET_DP_STATUS(chip->rec_load[1]);
 			dev_info(chip->dev, "attention, dp_status %x\n",
 				 chip->rec_load[1]);
+			if (chip->vdm_enter_just_resume > 0) {
+				chip->vdm_enter_just_resume--;
+				if (!(chip->rec_load[1] & 0x80)) {
+					dev_info(chip->dev, "Receive dp status disconnect "
+						 "after resume, send hard reset.\n");
+					set_state(chip, chip->notify.power_role ?
+						  policy_src_send_hardrst :
+						  policy_snk_send_hardrst);
+					return;
+				}
+			}
+
 			chip->notify.attention = true;
 			platform_fusb_notify(chip);
 			break;
@@ -2752,6 +2765,7 @@ static void fusb_state_snk_transition_default(struct fusb30x_chip *chip,
 	switch (chip->sub_state) {
 	case 0:
 		chip->notify.is_pd_connected = false;
+		tcpm_set_vconn(chip, 0);
 		chip->timer_mux = T_NO_RESPONSE;
 		fusb_timer_start(&chip->timer_mux_machine,
 				 chip->timer_mux);
@@ -3675,6 +3689,8 @@ static int fusb30x_pm_resume(struct device *dev)
 
 	fusb_irq_enable(chip);
 	chip->suspended = false;
+	if (chip->notify.is_enter_mode == true)
+		chip->vdm_enter_just_resume = 2;
 	queue_work(chip->fusb30x_wq, &chip->work);
 
 	return 0;
