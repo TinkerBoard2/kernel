@@ -1677,6 +1677,7 @@ static int hdmi_phy_configure_dwc_hdmi_3d_tx(struct dw_hdmi *hdmi,
 	unsigned int tmdsclock = hdmi->hdmi_data.video_mode.mtmdsclock;
 	unsigned int depth =
 		hdmi_bus_fmt_color_depth(hdmi->hdmi_data.enc_out_bus_format);
+	u16 ckcal_ctr = 0, term = 0, sym_ctr = 0, vlev_ctr = 0;
 
 	if (hdmi_bus_fmt_is_yuv420(hdmi->hdmi_data.enc_out_bus_format) &&
 	    pdata->mpll_cfg_420)
@@ -1720,11 +1721,36 @@ static int hdmi_phy_configure_dwc_hdmi_3d_tx(struct dw_hdmi *hdmi,
 	dw_hdmi_phy_i2c_write(hdmi, HDMI_3D_TX_PHY_MSM_CTRL_CKO_SEL_FB_CLK,
 			      HDMI_3D_TX_PHY_MSM_CTRL);
 
-	dw_hdmi_phy_i2c_write(hdmi, phy_config->term, HDMI_3D_TX_PHY_TXTERM);
-	dw_hdmi_phy_i2c_write(hdmi, phy_config->sym_ctr,
-			      HDMI_3D_TX_PHY_CKSYMTXCTRL);
-	dw_hdmi_phy_i2c_write(hdmi, phy_config->vlev_ctr,
-			      HDMI_3D_TX_PHY_VLEVCTRL);
+	if(mpixelclock == 297000000) {
+		term = 0x0000;
+		sym_ctr = 0x803d;
+		vlev_ctr = 0x01cd;
+		ckcal_ctr = (hdmi_phy_i2c_read(hdmi, HDMI_3D_TX_PHY_CKCALCTRL)) & (~ HDMI_3D_TX_PHY_CKCALCTRL_OVERRIDE);
+		dw_hdmi_phy_i2c_write(hdmi, term, HDMI_3D_TX_PHY_TXTERM);
+		dw_hdmi_phy_i2c_write(hdmi, sym_ctr, HDMI_3D_TX_PHY_CKSYMTXCTRL);
+		dw_hdmi_phy_i2c_write(hdmi, vlev_ctr, HDMI_3D_TX_PHY_VLEVCTRL);
+		dw_hdmi_phy_i2c_write(hdmi, ckcal_ctr, HDMI_3D_TX_PHY_CKCALCTRL);
+	}
+	else if(mpixelclock == 594000000) {
+		sym_ctr = 0x802b;
+		vlev_ctr = 0x0046;
+		ckcal_ctr = (hdmi_phy_i2c_read(hdmi, HDMI_3D_TX_PHY_CKCALCTRL)) & (~ HDMI_3D_TX_PHY_CKCALCTRL_OVERRIDE);
+		dw_hdmi_phy_i2c_write(hdmi, sym_ctr, HDMI_3D_TX_PHY_CKSYMTXCTRL);
+		dw_hdmi_phy_i2c_write(hdmi, vlev_ctr, HDMI_3D_TX_PHY_VLEVCTRL);
+		dw_hdmi_phy_i2c_write(hdmi, ckcal_ctr, HDMI_3D_TX_PHY_CKCALCTRL);
+		dw_hdmi_phy_i2c_write(hdmi, phy_config->term, HDMI_3D_TX_PHY_TXTERM);
+	}
+	else {
+		dw_hdmi_phy_i2c_write(hdmi, phy_config->term, HDMI_3D_TX_PHY_TXTERM);
+		dw_hdmi_phy_i2c_write(hdmi, phy_config->sym_ctr,
+				      HDMI_3D_TX_PHY_CKSYMTXCTRL);
+		dw_hdmi_phy_i2c_write(hdmi, phy_config->vlev_ctr,
+				      HDMI_3D_TX_PHY_VLEVCTRL);
+
+		/* Override and disable clock termination. */
+		dw_hdmi_phy_i2c_write(hdmi, HDMI_3D_TX_PHY_CKCALCTRL_OVERRIDE,
+				      HDMI_3D_TX_PHY_CKCALCTRL);
+	}
 
 	return 0;
 }
