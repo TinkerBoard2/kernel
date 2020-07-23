@@ -311,9 +311,8 @@ static int tinker_mcu_probe(struct i2c_client *client,
 
 	i2c_id = of_alias_get_id(np->parent, "i2c");
 
-	//DSI-0:i2c-2
-	//DSI-1:i2c-4
-	if(i2c_id == 2) {
+	//DSI-0:i2c-8
+	if(i2c_id == 8) {
 		dsi_id = 0;
 		client->dev.id = 0;
 	} else if(i2c_id == 4) {
