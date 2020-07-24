@@ -276,7 +276,7 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 	LOG_INFO("address = 0x%x\n", client->addr);
 
 	i2c_id = of_alias_get_id(np->parent, "i2c");
-	if (i2c_id == 2) {//DSI-0
+	if (i2c_id == 8) {//DSI-0
 		dsi_id = 0;
 	} else {
 		LOG_ERR("no supported i2c bus: %d\n", i2c_id);

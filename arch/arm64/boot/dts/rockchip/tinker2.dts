@@ -323,11 +323,6 @@
 	status = "okay";
 	i2c-scl-rising-time-ns = <345>;
 	i2c-scl-falling-time-ns = <11>;
-
-	tinker_ft5406: tinker_ft5406@38 {
-		compatible = "tinker_ft5406";
-		reg = <0x38>;
-	};
 };
 
 &i2c6 {
@@ -353,6 +348,11 @@
 	tinker_mcu_ili9881c: tinker_mcu_ili9881c@36 {
 		compatible = "tinker_mcu_ili9881c";
 		reg = <0x36>;
+	};
+
+	tinker_ft5406: tinker_ft5406@38 {
+		compatible = "tinker_ft5406";
+		reg = <0x38>;
 	};
 };
 
