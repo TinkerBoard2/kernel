@@ -100,7 +100,7 @@
 		clocks = <&rk808 1>;
 		clock-names = "ext_clock";
 		pinctrl-names = "default";
-		pinctrl-0 = <&wifi_enable_h>;
+		//pinctrl-0 = <&wifi_enable_h>;
 
 		/*
 		 * On the module itself this is one of these (depending
@@ -108,7 +108,7 @@
 		 * - SDIO_RESET_L_WL_REG_ON
 		 * - PDN (power down when low)
 		 */
-		reset-gpios = <&gpio0 10 GPIO_ACTIVE_LOW>; /* GPIO0_B2 */
+		//reset-gpios = <&gpio0 10 GPIO_ACTIVE_LOW>; /* GPIO0_B2 */
 	};
 
 	vcc3v3_sys: vcc3v3-sys {
