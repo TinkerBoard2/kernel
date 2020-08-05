@@ -157,6 +157,11 @@
 			gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>;
 			linux,default-trigger="mmc0";
 		};
+
+		rsv-led {
+			gpios = <&gpio0 RK_PB2 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger="none";
+		};
 	};
 
 	board_info: board-info {
