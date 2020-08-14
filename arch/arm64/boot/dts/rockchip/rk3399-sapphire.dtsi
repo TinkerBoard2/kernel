@@ -232,8 +232,8 @@
 	wolirq-gpio = <&gpio3 16 GPIO_ACTIVE_LOW>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmii_pins>;
-	tx_delay = <0x28>;
-	rx_delay = <0x11>;
+	tx_delay = <0x25>;
+	rx_delay = <0x20>;
 	wakeup-enable = "0";
 	status = "okay";
 };
