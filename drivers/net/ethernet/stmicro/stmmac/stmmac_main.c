@@ -3099,6 +3099,8 @@ int stmmac_dvr_probe(struct device *device,
 		goto error_netdev_register;
 	}
 
+	netif_carrier_off(ndev);
+
 #ifdef CONFIG_DWMAC_RK_AUTO_DELAYLINE
 	INIT_DELAYED_WORK(&priv->scan_dwork, stmmac_scan_delayline_dwork);
 #endif
