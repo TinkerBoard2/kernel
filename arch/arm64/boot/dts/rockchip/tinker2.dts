@@ -238,6 +238,10 @@
 	status = "disabled";
 };
 
+&dp_in_vopb {
+	status = "disabled";
+};
+
 &hdmi {
 	status = "okay";
 	pinctrl-0 = <&hdmi_i2c_xfer>, <&hdmi_cec>;
