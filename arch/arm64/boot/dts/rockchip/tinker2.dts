@@ -578,18 +578,6 @@
 			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
-
-	hdmiin {
-		hdmiin_gpios: hdmiin-gpios {
-			rockchip,pins =
-				<2 5 RK_FUNC_GPIO &pcfg_output_high>,
-				<2 6 RK_FUNC_GPIO &pcfg_output_high>,
-				<2 7 RK_FUNC_GPIO &pcfg_pull_none>,
-				<2 8 RK_FUNC_GPIO &pcfg_output_high>,
-				<2 9 RK_FUNC_GPIO &pcfg_output_high>,
-				<2 12 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
 };
 
 &fiq_debugger {
