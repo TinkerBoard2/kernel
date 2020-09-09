@@ -2440,6 +2440,13 @@ static int clk_core_set_rate_nolock(struct clk_core *core,
 	if (ret)
 		goto pre_rate_change_err;
 
+	if (!strncmp(core->name, "dclk_vop0", 9) && !strncmp(top->name, "pll_cpll", 8)) {
+		if ((req_rate == 27027000) && (clk_core_get_rate_nolock(core) == 26100999)) {
+			pr_err("clk_core_set_rate_nolock ignore dclk_vop0->pll_cpll, vop0 should not use pll_cpll \n");
+			return -EINVAL;
+		}
+	}
+
 	/* notify that we are about to change rates */
 	fail_clk = clk_propagate_rate_change(top, PRE_RATE_CHANGE);
 	if (fail_clk) {
