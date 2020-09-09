@@ -2397,7 +2397,7 @@ static int handle_tx_event(struct xhci_hcd *xhci,
 			  slot_id, ep_index);
 		break;
 	case COMP_ISOCH_BUFFER_OVERRUN:
-		xhci_warn(xhci,
+		xhci_dbg(xhci,
 			  "WARN: buffer overrun event for slot %u ep %u on endpoint",
 			  slot_id, ep_index);
 		break;
