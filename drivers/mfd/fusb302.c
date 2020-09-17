@@ -2764,6 +2764,7 @@ static void fusb_state_snk_transition_default(struct fusb30x_chip *chip,
 	switch (chip->sub_state) {
 	case 0:
 		chip->notify.is_pd_connected = false;
+		tcpm_set_vconn(chip, 0);
 		chip->timer_mux = T_NO_RESPONSE;
 		fusb_timer_start(&chip->timer_mux_machine,
 				 chip->timer_mux);
@@ -2778,7 +2779,7 @@ static void fusb_state_snk_transition_default(struct fusb30x_chip *chip,
 	case 1:
 		if (!tcpm_check_vbus(chip)) {
 			chip->sub_state++;
-			chip->timer_state = T_SRC_RECOVER_MAX + T_SRC_TURN_ON;
+			chip->timer_state = T_SRC_TURN_ON;
 			fusb_timer_start(&chip->timer_state_machine,
 					 chip->timer_state);
 		} else if (evt & EVENT_TIMER_STATE) {
