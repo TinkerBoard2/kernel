@@ -2621,12 +2621,7 @@ static void fusb_state_snk_wait_caps(struct fusb30x_chip *chip, u32 evt)
 		}
 	} else if (evt & EVENT_TIMER_STATE) {
 		if (chip->hardrst_count <= N_HARDRESET_COUNT) {
-			if (chip->vbus_begin) {
-				chip->vbus_begin = false;
-				set_state(chip, policy_snk_send_softrst);
-			} else {
-				set_state(chip, policy_snk_send_hardrst);
-			}
+			set_state(chip, policy_snk_send_hardrst);
 		} else {
 			if (chip->is_pd_support)
 				set_state(chip, error_recovery);
