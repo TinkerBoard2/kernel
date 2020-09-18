@@ -1192,10 +1192,11 @@ static void process_vdm_msg(struct fusb30x_chip *chip)
 			if (chip->vdm_enter_just_resume > 0) {
 				chip->vdm_enter_just_resume--;
 				if (!(chip->rec_load[1] & 0x80)) {
-					dev_info(chip->dev, "Receive dp status disconnect \
-						 after resume, do hard reset.\n");
-					fusb302_pd_reset(chip);
-					pd_execute_hard_reset(chip);
+					dev_info(chip->dev, "Receive dp status disconnect "
+						 "after resume, send hard reset.\n");
+					set_state(chip, chip->notify.power_role ?
+						  policy_src_send_hardrst :
+						  policy_snk_send_hardrst);
 					return;
 				}
 			}
@@ -2779,7 +2780,7 @@ static void fusb_state_snk_transition_default(struct fusb30x_chip *chip,
 	case 1:
 		if (!tcpm_check_vbus(chip)) {
 			chip->sub_state++;
-			chip->timer_state = T_SRC_TURN_ON;
+			chip->timer_state = T_SRC_RECOVER_MAX + T_SRC_TURN_ON;
 			fusb_timer_start(&chip->timer_state_machine,
 					 chip->timer_state);
 		} else if (evt & EVENT_TIMER_STATE) {
