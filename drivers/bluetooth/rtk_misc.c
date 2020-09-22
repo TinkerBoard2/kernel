@@ -1327,7 +1327,7 @@ static int load_config(dev_data *dev_entry, u8 **buf, int *length)
 	int len;
 	u8 tmp_buf[32];
 	int file_sz;
-	int retry = 8;
+	int retry = 15;
 
 	config_lists_init();
 	patch_entry = dev_entry->patch_entry;
