@@ -206,9 +206,55 @@
         };
 };
 
+&pwm0 {
+	status = "disabled";
+};
+
 &backlight {
-	status = "okay";
-	enable-gpios = <&gpio4 29 GPIO_ACTIVE_HIGH>;
+		status = "disabled";
+		compatible = "pwm-backlight";
+		pwms = <&pwm0 0 400000 0>;//f=2500 t=400,000ns
+		brightness-levels = <
+				  0   1   2   3    4    5    6   7
+				 9    10  11  12  13  14  15  16
+				 17  18  19  20  21  22  23  24
+				 25  26  27  28  29  30  31  32
+				 33  34  35  37  37  38  38  39
+				 40  41  42  43  44  45  46  47
+				 48  49  50  51  52  53  54  55
+				 56  57  58  59  60  61  62  63
+				 64  65  66  67  68  69  70  71
+				 72  73  74  75  76  77  78  79
+				 80  81  82  83  84  85  86  87
+				 88  89  90  91  92  93  94  95
+				 96  97  98  99 100 101 102 103
+				104 105 106 107 108 109 110 111
+				112 113 114 115 116 117 118 119
+				120 121 122 123 124 125 126 127
+				128 129 130 131 132 133 134 135
+				136 137 138 139 140 141 142 143
+				144 145 146 147 148 149 150 151
+				152 153 154 155 156 157 158 159
+				160 161 162 163 164 165 166 167
+				168 169 170 171 172 173 174 175
+				176 177 178 179 180 181 182 183
+				184 185 186 187 188 189 190 191
+				192 193 194 195 196 197 198 199
+				200 201 202 203 204 205 206 207
+				208 209 210 211 212 213 214 215
+				216 217 218 219 220 221 222 223
+				224 225 226 227 228 229 230 231
+				232 233 234 235 236 237 238 239
+				240 241 242 243 244 245 246 247
+				248 249 250 251 252 253 254 255
+		>;
+		default-brightness-level = <200>;
+		minimal-brightness-level = <26>;
+		soc_enablekl-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+		enable_dealy = <15>;
+		disable_delay = <5>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_lvds_bl_en>;
 };
 
 &display_subsystem {
@@ -222,6 +268,11 @@
 		reg = <0>;
 		status = "okay";
 	};
+		port@2 {
+			mipi_dsi_out: endpoint3 {
+				remote-endpoint = <&sn65dsi84_in>;
+			};
+		};
 };
 
 &dsi_in_vopb {
@@ -353,6 +404,69 @@
 	m24c08@50 {
 		compatible = "at,24c08";
 		reg = <0x50>;
+	};
+
+	dsi_lvds_bridge: sn65dsi84@2c {
+		compatible = "asus,sn65dsi84";
+		status = "disabled";
+		reg = <0x2c>;
+
+		backlight = <&backlight>;
+
+		lvds-clk-rate = <72000000>;
+		lvds-format = <2>;
+		lvds-bpp = <24>;
+		lvds-width-mm = <476>;
+		lvds-height-mm = <267>;
+		sync_delay = <33>;
+		//dual-link;
+		//test-pattern;
+
+		t1=<0>;
+		t2=<1>;
+		t3=<500>;
+		t4=<200>;
+		t5=<1>;
+		t6=<0>;
+		t7=<1000>;
+
+		bpc=<8>;
+		bus-format = <0x100a>;//<MEDIA_BUS_FMT_RGB888_1X24>;
+		dsi,flags = <0x3>;
+		dsi,format = <0>;//MIPI_DSI_FMT_RGB888:
+		dsi-lanes = <4>;
+
+		pinctrl-names = "default";
+		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_sn65dsi84_irq>;//<&pinctrl_lvds_hdmi_sel>
+
+		/*lvds_hdmi_sel-gpios = <&5 23 GPIO_ACTIVE_HIGH>;*/
+		EN-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
+		lvds_vdd_en-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
+		dsi84_irq-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+
+		display-timings {
+			lvds {
+				clock-frequency = <144000000>;
+				hactive = <1920>;
+				vactive = <1080>;
+				hfront-porch = <96>;
+				hback-porch = <96>;
+				hsync-len = <64>;
+				vfront-porch = <8>;
+				vsync-len = <4>;
+				vback-porch = <8>;
+				hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <1>;
+				pixelclk-active = <0>;
+			};
+		};
+
+		port {
+			sn65dsi84_in: endpoint2 {
+				remote-endpoint = <&mipi_dsi_out>;
+			};
+		};
 	};
 
 	tinker_mcu: tinker_mcu@45 {
@@ -580,6 +694,28 @@
 			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
+
+	 mipi_to_lvds {
+		/*pinctrl_lvds_hdmi_sel: lvds_hdmi_sel {
+			rockchip,pins = <0 5 RK_FUNC_GPIO  &pcfg_pull_none>;
+		};*/
+
+		pinctrl_sn65dsi84_irq: sn65dsi84_irq{
+			rockchip,pins = <1 RK_PB2 RK_FUNC_GPIO  &pcfg_pull_none>;
+		};
+
+		pinctrl_sn65dsi84_en: sn65dsi84_en {
+			rockchip,pins = <1 RK_PA7 RK_FUNC_GPIO   &pcfg_pull_none>;
+		};
+
+		pinctrl_lvds_bl_en: lvds_bl_en {
+			rockchip,pins = <1 RK_PB0 RK_FUNC_GPIO  &pcfg_pull_none>;
+		};
+
+		pinctrl_lvds_vdd_en: lvds_vdd_en {
+			rockchip,pins = <1 RK_PB1 RK_FUNC_GPIO  &pcfg_pull_none>;
+		};
+	 };
 };
 
 &fiq_debugger {

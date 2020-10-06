@@ -163,7 +163,6 @@ of_mipi_dsi_device_add(struct mipi_dsi_host *host, struct device_node *node)
 	struct mipi_dsi_device_info info = { };
 	int ret;
 	u32 reg;
-
 	if (of_modalias_node(node, info.type, sizeof(info.type)) < 0) {
 		dev_err(dev, "modalias failure on %s\n", node->full_name);
 		return ERR_PTR(-EINVAL);
@@ -282,6 +281,11 @@ struct mipi_dsi_host *of_find_mipi_dsi_host_by_node(struct device_node *node)
 }
 EXPORT_SYMBOL(of_find_mipi_dsi_host_by_node);
 
+#if defined(CONFIG_TINKER_MCU)
+extern int tinker_mcu_is_connected(int dsi_id);
+extern int tinker_mcu_ili9881c_is_connected(int dsi_id);
+#endif
+
 int mipi_dsi_host_register(struct mipi_dsi_host *host)
 {
 	struct device_node *node;
@@ -290,7 +294,12 @@ int mipi_dsi_host_register(struct mipi_dsi_host *host)
 		/* skip nodes without reg property */
 		if (!of_find_property(node, "reg", NULL))
 			continue;
-		of_mipi_dsi_device_add(host, node);
+		printk("mipi_dsi_host_register\n");
+
+		if (tinker_mcu_is_connected(0) ||
+			tinker_mcu_ili9881c_is_connected(0)) {
+			of_mipi_dsi_device_add(host, node);
+		}
 	}
 
 	mutex_lock(&host_lock);
@@ -330,7 +339,7 @@ int mipi_dsi_attach(struct mipi_dsi_device *dsi)
 
 	if (!ops || !ops->attach)
 		return -ENOSYS;
-
+	printk("mipi_dsi_attach ops->attach=%pF\n", ops->attach);
 	return ops->attach(dsi->host, dsi);
 }
 EXPORT_SYMBOL(mipi_dsi_attach);
