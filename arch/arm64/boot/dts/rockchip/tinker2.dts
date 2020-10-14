@@ -273,6 +273,11 @@
 				remote-endpoint = <&sn65dsi84_in>;
 			};
 		};
+		port@3 {
+			mipi_dsi_to_edp_out: endpoint {
+				remote-endpoint = <&sn65dsi86_in>;
+			};
+		};
 };
 
 &dsi_in_vopb {
@@ -404,6 +409,70 @@
 	m24c08@50 {
 		compatible = "at,24c08";
 		reg = <0x50>;
+	};
+
+	dsi_edp_bridge: sn65dsi86@2d {
+		compatible = "asus,sn65dsi86";
+		status = "okay";
+		reg = <0x2d>;
+
+		//backlight = <&backlight>;
+
+		edp-width-mm = <344>;
+		edp-height-mm = <193>;
+		data-lanes = <0 1>;
+		lane-polarities = <0 0 0 0>;
+
+		t1=<0>;
+		t2=<1>;
+		t3=<500>;
+		t4=<200>;
+		t5=<1>;
+		t6=<0>;
+		t7=<1000>;
+		t12= <500>;
+		t14= <12>;
+		t15 = <12>;
+		t16= <12>;
+		t17 = <12>;
+
+		bpc=<8>;
+		bus-format = <0x100A>;//<MEDIA_BUS_FMT_RGB888_1X24>;
+		dsi,flags = <0x3>;
+		dsi,format = <0>;//MIPI_DSI_FMT_RGB888:
+		dsi-lanes = <4>;
+
+		pinctrl-names = "default";
+		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_lvds_bl_en>;
+
+		EN-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
+		edp_vdd_en-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
+		dsi86_vbl_en-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+		dsi86_irq-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+
+		display-timings {
+			edp {
+				clock-frequency = <142000000>;
+				hactive = <1920>;
+				vactive = <1080>;
+				hfront-porch = <108>;
+				hback-porch = <24>;
+				hsync-len = <48>;
+				vfront-porch = <10>;
+				vsync-len = <10>;
+				vback-porch = <26>;
+				hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <1>;
+				pixelclk-active = <0>;
+			};
+		};
+
+		port {
+			sn65dsi86_in: endpoint2 {
+				remote-endpoint = <&mipi_dsi_to_edp_out>;
+			};
+		};
 	};
 
 	dsi_lvds_bridge: sn65dsi84@2c {

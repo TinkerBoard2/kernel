@@ -1231,6 +1231,7 @@ static void dw_mipi_dsi_pre_enable(struct dw_mipi_dsi *dsi)
 
 extern void sn65dsi84_bridge_enable(struct drm_bridge *bridge);
 extern  bool sn65dsi84_is_connected(void);
+extern bool sn65dsi86_is_connected(void);
 
 static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 {
@@ -1752,11 +1753,12 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 #if defined(CONFIG_TINKER_MCU)
 	if(!tinker_mcu_is_connected(dsi->id) &&
 		!tinker_mcu_ili9881c_is_connected(dsi->id) &&
-		!sn65dsi84_is_connected()) {
-		pr_info("dsi-%d panel or sn65dsi84 isn't connected\n", dsi->id);
+		!sn65dsi84_is_connected() &&
+		!sn65dsi86_is_connected()) {
+		pr_info("dsi-%d panel or sn65dsi8x isn't connected\n", dsi->id);
 		return 0;
 	} else {
-		pr_info("dsi-%d panel or sn65dsi84 is connected\n", dsi->id);
+		pr_info("dsi-%d panel or sn65dsi8x is connected\n", dsi->id);
 	}
 #endif
 	if (dsi->client) {

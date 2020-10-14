@@ -5,3 +5,11 @@ config DRM_I2C_SN65DSI84
 	select REGMAP_I2C
 	help
 	  Support for the TI SN65DSI84.
+
+config DRM_I2C_SN65DSI86
+	tristate "SN65DSI86"
+	depends on OF
+	select DRM_KMS_HELPER
+	select REGMAP_I2C
+	help
+	  Support for the TI SN65DSI86.
