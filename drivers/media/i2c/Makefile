@@ -107,6 +107,7 @@ obj-$(CONFIG_VIDEO_OV5647)	+= ov5647.o
 obj-$(CONFIG_VIDEO_JX_H65)	+= jx_h65.o
 obj-$(CONFIG_VIDEO_IMX214)	+= imx214.o
 obj-$(CONFIG_VIDEO_IMX219)	+= imx219.o
+obj-$(CONFIG_VIDEO_IMX477)	+= imx477.o
 obj-$(CONFIG_VIDEO_IMX258)	+= imx258.o
 obj-$(CONFIG_VIDEO_IMX258_EEPROM)	+= imx258_eeprom.o
 obj-$(CONFIG_VIDEO_IMX291)	+= imx291.o
