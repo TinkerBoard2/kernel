@@ -1896,7 +1896,6 @@ static int stmmac_open(struct net_device *dev)
 			       __func__, priv->lpi_irq, ret);
 			goto lpiirq_error;
 		}
-		set_wakeup_enable(priv->plat->wakeup_enable,dev);
 	}
 
 	if (priv->plat->wolirq_io > 0) {
@@ -1917,6 +1916,7 @@ static int stmmac_open(struct net_device *dev)
 		} else {
 			priv->wol_irq = priv->plat->wol_irq;
 		}
+		set_wakeup_enable(priv->plat->wakeup_enable,dev);
 	}
 
 	napi_enable(&priv->napi);
