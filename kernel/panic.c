@@ -24,6 +24,7 @@
 #include <linux/init.h>
 #include <linux/nmi.h>
 #include <linux/console.h>
+#include <linux/boardinfo.h>
 
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
@@ -184,7 +185,10 @@ void panic(const char *fmt, ...)
 		 * shutting down.  But if there is a chance of
 		 * rebooting the system it will be rebooted.
 		 */
-		emergency_restart();
+		//emergency_restart();
+		pr_emerg("Restart pmic....\n");
+		pmic_restart();
+		mdelay(1000);
 	}
 #ifdef __sparc__
 	{
