@@ -308,12 +308,18 @@ static void sn65dsi84_init_csr_registers(struct sn65dsi84_data *sn65dsi84)
 	#define LOW_BYTE(X)  (X & 0x00FF)
 
 	printk(KERN_INFO "%s +\n", __func__);
-
+#if 0
 	sn65dsi84_write(sn65dsi84->client, SN_SOFT_RESET, 0x00);
 	sn65dsi84_write(sn65dsi84->client, SN_CLK_SRC, sn65dsi84_clk_src(sn65dsi84));//0x05
 	sn65dsi84_write(sn65dsi84->client, SN_CLK_DIV, sn65dsi84_clk_div(sn65dsi84));//0x28
 	sn65dsi84_write(sn65dsi84->client, SN_PLL_EN, 0x00);
-
+#else
+	sn65dsi84_write(sn65dsi84->client, SN_SOFT_RESET, 0x00);
+	sn65dsi84_write(sn65dsi84->client, SN_PLL_EN, 0x00);
+	msleep(10);
+	sn65dsi84_write(sn65dsi84->client, SN_CLK_SRC, sn65dsi84_clk_src(sn65dsi84));//0x05
+	sn65dsi84_write(sn65dsi84->client, SN_CLK_DIV, sn65dsi84_clk_div(sn65dsi84));//0x28
+#endif
 	/* Configure DSI_LANES  */
 	sn65dsi84_read(sn65dsi84->client, SN_DSI_LANES, &val);
 	val &= ~(3 << CHA_DSI_LANES);
@@ -399,7 +405,6 @@ static void sn65dsi84_init_sequence(struct sn65dsi84_data *sn65dsi84)
 		sn65dsi84_chip_shutdown(sn65dsi84);
 		sn65dsi84_chip_enable(sn65dsi84);
 		sn65dsi84_init_csr_registers(sn65dsi84);
-
 		sn65dsi84_write(sn65dsi84->client, SN_PLL_EN, 0x1);
 		msleep(10);
 		sn65dsi84_write(sn65dsi84->client, SN_SOFT_RESET, 1);
@@ -578,6 +583,29 @@ static struct sn65dsi84_data *bridge_to_sn65dsi84(struct drm_bridge *bridge)
 	return container_of(bridge, struct sn65dsi84_data, bridge);
 }
 
+static void _sn65dsi84_enable(struct sn65dsi84_data *sn65dsi84)
+{
+	printk(KERN_INFO "%s +\n", __func__);
+
+	sn65dsi84_init_sequence(sn65dsi84);
+	enable_irq(sn65dsi84->dsi84_irq);
+
+	return;
+}
+
+static void _sn65dsi84_disable(struct sn65dsi84_data *sn65dsi84)
+{
+	printk(KERN_INFO "%s\n", __func__);
+
+	disable_irq_nosync(sn65dsi84->dsi84_irq);
+	sn65dsi84_enable_irq(sn65dsi84, false);
+	sn65dsi84_write(sn65dsi84->client, SN_PLL_EN, 0);
+	sn65dsi84_chip_shutdown(sn65dsi84);
+
+
+	return;
+}
+
 static void sn65dsi84_bridge_enable(struct drm_bridge *bridge)
 {
 	struct sn65dsi84_data *sn65dsi84 = bridge_to_sn65dsi84(bridge);
@@ -586,6 +614,7 @@ static void sn65dsi84_bridge_enable(struct drm_bridge *bridge)
 
 	if (sn65dsi84->enabled)
 		return;
+
 	#if 0
 	lvds_power_off(sn65dsi84);
 	msleep(500);
@@ -910,6 +939,153 @@ static void sn65dsi84_irq_worker(struct work_struct *work)
 	enable_irq(sn65dsi84->dsi84_irq);
 }
 
+static ssize_t sn65dsi84_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sn65dsi84_data *sn65dsi84 = dev_get_drvdata(dev);
+
+	_sn65dsi84_disable(sn65dsi84);
+	_sn65dsi84_enable(sn65dsi84);
+
+	return strnlen(buf, count);
+}
+
+static ssize_t sn65dsi84_reg_show(struct device *dev, struct device_attribute *attr, char *buf2)
+{
+	struct sn65dsi84_data *sn65dsi84 = dev_get_drvdata(dev);
+	uint8_t buf[1] = {0};
+
+	sn65dsi84_read(sn65dsi84->client, SN_SOFT_RESET, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x09= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_PLL_EN, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x0d = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_CLK_SRC, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x0a= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_CLK_DIV, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x0b= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_DSI_LANES, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x10= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_DSI_EQ, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x11= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_DSI_CLK, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x12= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x13, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x13= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_FORMAT, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x18= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_LVDS_VOLTAGE, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x19 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_LVDS_TERM, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x1a = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_LVDS_CM_VOLTAGE, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x1b= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_HACTIVE_LOW, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x20= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_HACTIVE_HIGH, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x21= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x22, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x22= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x23, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x23= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_VACTIVE_LOW, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x24 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_VACTIVE_HIGH, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x25 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x26, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x26= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x27, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x27 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_SYNC_DELAY_LOW, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x28= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_SYNC_DELAY_HIGH, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x29= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x2A, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x2A= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x2B, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x2b= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_HSYNC_LOW, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x2c = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_HSYNC_HIGH, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x2d = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x2E, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x2e= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x2F, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x2F= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_VSYNC_LOW, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x30= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_VSYNC_HIGH, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x31 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x32, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x32 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x33, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x33 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_HBP, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x34 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x35, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x35 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_VBP, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x36 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x37, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x37 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_HFP, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x38 = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x39, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x39= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_VFP, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x3a= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x3B, buf);
+	printk(KERN_ERR "sn65dsi84_show 0x3b = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_TEST_PATTERN, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x3c = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x3D, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x3D = 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, 0x3E, buf);
+	printk(KERN_ERR "sn65dsi84_show  0x3E= 0x%x\n", buf[0]);
+	sn65dsi84_read(sn65dsi84->client, SN_IRQ_STAT, buf);
+	printk(KERN_ERR "sn65dsi84_show  0xe5  SN_IRQ_STAT = %x\n", buf[0]);
+
+	return 0;
+}
+
+static ssize_t sn65dsi84_reg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sn65dsi84_data *sn65dsi84 = dev_get_drvdata(dev);
+	unsigned val;
+	int ret;
+	char *endp;
+	unsigned reg = simple_strtol(buf, &endp, 16);
+
+	if (reg > 0xe5)
+		return count;
+
+	if (!endp)
+		return count;
+
+	printk("%s: %c\n", __func__, *endp);
+	val = simple_strtol(endp+1, &endp, 16);
+	if (val >= 0x100)
+		return count;
+
+	printk("%s:reg=0x%x, val=0x%x\n", __func__, reg, val);
+	ret = sn65dsi84_write(sn65dsi84->client, reg, val);
+	if (ret < 0)
+		return ret;
+
+	return strnlen(buf, count);
+}
+
+static DEVICE_ATTR(sn65dsi84_reinit, S_IRUGO | S_IWUSR, NULL, sn65dsi84_store);
+static DEVICE_ATTR(sn65dsi84_reg, S_IRUGO | S_IWUSR, sn65dsi84_reg_show, sn65dsi84_reg_store);
+
+static struct attribute *sn65dsi84_attributes[] = {
+	&dev_attr_sn65dsi84_reinit.attr,
+	&dev_attr_sn65dsi84_reg.attr,
+	NULL
+};
+
+static const struct attribute_group sn65dsi84_attr_group = {
+	.attrs = sn65dsi84_attributes,
+};
+
 static int sn65dsi84_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 {
 	struct sn65dsi84_data *sn65dsi84;
@@ -923,7 +1099,7 @@ static int sn65dsi84_probe(struct i2c_client *i2c, const struct i2c_device_id *i
 	sn65dsi84 = devm_kzalloc(dev, sizeof(struct sn65dsi84_data), GFP_KERNEL);
 	if (!sn65dsi84)
 		return -ENOMEM;
-
+	dev->driver_data = sn65dsi84;
 	sn65dsi84->dev = dev;
 	sn65dsi84->client = i2c;
 	sn65dsi84->enabled = false;
@@ -992,6 +1168,9 @@ static int sn65dsi84_probe(struct i2c_client *i2c, const struct i2c_device_id *i
 		dev_err(dev, "error: sn65dsi84_probe, unable to request irq for device %s.\n", DRIVER_NAME);
 	}
 	disable_irq(sn65dsi84->dsi84_irq);
+
+	//ret = device_create_file(&i2c->dev, &dev_attr_sn65dsi84_debug);
+	ret = sysfs_create_group(&i2c->dev.kobj, &sn65dsi84_attr_group);
 	printk(KERN_INFO "%s -\n", __func__);
 
 	return 0;
