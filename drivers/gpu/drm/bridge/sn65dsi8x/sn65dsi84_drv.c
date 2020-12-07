@@ -606,7 +606,7 @@ static void _sn65dsi84_disable(struct sn65dsi84_data *sn65dsi84)
 	return;
 }
 
-static void sn65dsi84_bridge_enable(struct drm_bridge *bridge)
+void sn65dsi84_bridge_enable(struct drm_bridge *bridge)
 {
 	struct sn65dsi84_data *sn65dsi84 = bridge_to_sn65dsi84(bridge);
 
@@ -1116,13 +1116,12 @@ static int sn65dsi84_probe(struct i2c_client *i2c, const struct i2c_device_id *i
 	}
 
 	lvds_power_off(sn65dsi84);
-	msleep(1000); //t15
+	//msleep(1000); //t15
 
 	sn65dsi84_chip_shutdown(sn65dsi84);
 	sn65dsi84_chip_enable(sn65dsi84);
 	sn65dsi84_detect(sn65dsi84);
 	sn65dsi84_chip_shutdown(sn65dsi84);
-
 	if (sn65dsi84->status == connector_status_connected) {
 		printk(KERN_INFO "%s : sn65dsi84 is connected!\n", __func__);
 		switch_to_lvds = true;

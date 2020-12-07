@@ -31,6 +31,8 @@
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_vop.h"
 
+struct drm_bridge *sn65dsi_bridge;
+
 #define DRIVER_NAME    "dw-mipi-dsi"
 
 #define IS_DSI0(dsi)	((dsi)->id == 0)
@@ -1227,6 +1229,9 @@ static void dw_mipi_dsi_pre_enable(struct dw_mipi_dsi *dsi)
 		dw_mipi_dsi_pre_enable(dsi->slave);
 }
 
+extern void sn65dsi84_bridge_enable(struct drm_bridge *bridge);
+extern  bool sn65dsi84_is_connected(void);
+
 static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 {
 	const struct drm_display_mode *mode = &dsi->mode;
@@ -1238,6 +1243,9 @@ static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 	 */
 	regmap_update_bits(dsi->regmap, DSI_LPCLK_CTRL,
 			   PHY_TXREQUESTCLKHS, PHY_TXREQUESTCLKHS);
+
+	if (sn65dsi84_is_connected() && sn65dsi_bridge)
+		sn65dsi84_bridge_enable(sn65dsi_bridge);
 
 	regmap_write(dsi->regmap, DSI_PWR_UP, RESET);
 
@@ -1734,8 +1742,6 @@ extern int tinker_mcu_is_connected(int dsi_id);
 extern int tinker_mcu_ili9881c_is_connected(int dsi_id);
 #endif
 
-extern  bool sn65dsi84_is_connected(void);
-
 static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 			     void *data)
 {
@@ -1764,6 +1770,7 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 			printk("dw_mipi_dsi_bind  can not find bridge\n");
 			return -EPROBE_DEFER;
 		}
+		sn65dsi_bridge = dsi->bridge;
 	}
 
 	if (dsi->id) {
