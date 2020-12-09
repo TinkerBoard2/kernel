@@ -726,6 +726,11 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 		break;
 	}
 
+	if((mode->hdisplay == 720) && (mode->vdisplay == 480 || mode->vdisplay == 576)) {
+		pr_err("force set color_format to DRM_HDMI_OUTPUT_DEFAULT_RGB");
+		*color_format = DRM_HDMI_OUTPUT_DEFAULT_RGB;
+	}
+
 	if (*color_format == DRM_HDMI_OUTPUT_DEFAULT_RGB &&
 	    info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_30)
 		support_dc = true;
