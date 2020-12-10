@@ -1230,6 +1230,7 @@ static void dw_mipi_dsi_pre_enable(struct dw_mipi_dsi *dsi)
 }
 
 extern void sn65dsi84_bridge_enable(struct drm_bridge *bridge);
+extern void sn65dsi86_bridge_enable(struct drm_bridge *bridge);
 extern  bool sn65dsi84_is_connected(void);
 extern bool sn65dsi86_is_connected(void);
 
@@ -1247,6 +1248,9 @@ static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 
 	if (sn65dsi84_is_connected() && sn65dsi_bridge)
 		sn65dsi84_bridge_enable(sn65dsi_bridge);
+
+	if (sn65dsi86_is_connected() && sn65dsi_bridge)
+		sn65dsi86_bridge_enable(sn65dsi_bridge);
 
 	regmap_write(dsi->regmap, DSI_PWR_UP, RESET);
 

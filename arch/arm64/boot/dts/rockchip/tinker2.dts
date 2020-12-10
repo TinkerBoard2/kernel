@@ -413,10 +413,10 @@
 
 	dsi_edp_bridge: sn65dsi86@2d {
 		compatible = "asus,sn65dsi86";
-		status = "okay";
+		status = "disable";
 		reg = <0x2d>;
 
-		//backlight = <&backlight>;
+		backlight = <&backlight>;
 
 		edp-width-mm = <344>;
 		edp-height-mm = <193>;
@@ -424,17 +424,18 @@
 		lane-polarities = <0 0 0 0>;
 
 		t1=<0>;
-		t2=<1>;
-		t3=<500>;
-		t4=<200>;
-		t5=<1>;
+		t2=<0>;
+		t3=<200>;
+		t4=<20>;
+		t5=<0>;
 		t6=<0>;
-		t7=<1000>;
+		t7=<0>;
+		t8=<100>;
 		t12= <500>;
-		t14= <12>;
-		t15 = <12>;
-		t16= <12>;
-		t17 = <12>;
+		t14= <15>;
+		t15 = <15>;
+		t16= <15>;
+		t17 = <15>;
 
 		bpc=<8>;
 		bus-format = <0x100A>;//<MEDIA_BUS_FMT_RGB888_1X24>;
@@ -443,11 +444,11 @@
 		dsi-lanes = <4>;
 
 		pinctrl-names = "default";
-		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_lvds_bl_en>;
+		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_sn65dsi84_irq>;//<&pinctrl_lvds_bl_en>;
 
 		EN-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
 		edp_vdd_en-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
-		dsi86_vbl_en-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+		//dsi86_vbl_en-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
 		dsi86_irq-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
 
 		display-timings {
@@ -456,8 +457,8 @@
 				hactive = <1920>;
 				vactive = <1080>;
 				hfront-porch = <108>;
-				hback-porch = <24>;
 				hsync-len = <48>;
+				hback-porch = <24>;
 				vfront-porch = <10>;
 				vsync-len = <10>;
 				vback-porch = <26>;

@@ -46,7 +46,7 @@ struct sn65dsi86_data {
 	struct mipi_dsi_device *dsi;
 	struct videomode  vm;
 
-	struct drm_display_mode curr_mode;
+	struct drm_display_mode mode;
 	unsigned int bus_format;
 	unsigned int bpc;
 	unsigned int format;
@@ -58,6 +58,7 @@ struct sn65dsi86_data {
 	unsigned int t5;
 	unsigned int t6;
 	unsigned int t7;
+	unsigned int t8;
 	unsigned int t12;
 	unsigned int t14;
 	unsigned int t15;

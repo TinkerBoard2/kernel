@@ -58,6 +58,9 @@
 #define SN_LN_ASSIGN_REG			0x59
 #define  LN_ASSIGN_WIDTH			2
 #define SN_ENH_FRAME_REG			0x5A
+#define  AUTHEN_METHOD_MASK			GENMASK(0, 1)
+#define  SCRAMBLER_SEED_RESET			BIT(0)
+#define  ENH_FRAME_ENABLE				BIT(2)
 #define  VSTREAM_ENABLE				BIT(3)
 #define  LN_POLRS_OFFSET			4
 #define  LN_POLRS_MASK				0xf0
@@ -154,6 +157,18 @@
 static bool sn65dsi86_exist = false;
 struct sn65dsi86_data *gdata;
 
+#ifndef DIRECT_EDID_METHOD
+static ssize_t sn65dsi86_read_edid(struct sn65dsi86_data *pdata);
+#endif
+void sn65dsi86_enable_irq(struct sn65dsi86_data *sn65dsi86, bool enable);
+static void sn65dsi86_dump_status_register(struct sn65dsi86_data *sn65dsi86);
+static void sn65dsi86_dump_status_register(struct sn65dsi86_data *sn65dsi86);
+#ifdef PWM_FROM_SN65DSI86
+static void sn65dsi86_gpio4_to_pwm(struct sn65dsi86_data *pdata, bool enable);
+static void sn65dsi86_set_pwm_freq(struct sn65dsi86_data *pdata);
+static void sn65dsi86_pwm_enable(struct sn65dsi86_data *pdata, bool enable);
+#endif
+
 bool sn65dsi86_is_connected(void)
 {
 	return sn65dsi86_exist;
@@ -179,7 +194,6 @@ static void edp_power_off(struct sn65dsi86_data *sn65dsi86)
 	}
 }
 
-#if 1
 int sn65dsi86_read(struct i2c_client *client, int reg, uint8_t *val)
 {
 	int ret;
@@ -198,7 +212,7 @@ int sn65dsi86_read(struct i2c_client *client, int reg, uint8_t *val)
 int sn65dsi86_write(struct i2c_client *client, u8 reg, u8 val)
 {
 	int ret = i2c_smbus_write_byte_data(client, reg, val);
-	printk("sn65dsi86_write reg=0x%02x, val=0x%02x\n", reg, val);
+	//printk("sn65dsi86_write reg=0x%02x, val=0x%02x\n", reg, val);
 	if (ret)
 		dev_err(&client->dev, "failed to write at reg=0x%02x, val=0x%02x\n", reg, val);
 
@@ -222,23 +236,6 @@ int sn65dsi86_update_bit(struct i2c_client *client, u8 reg, u8 mask, u8 data)
 
 	return sn65dsi86_write(client, reg, tmp);
 }
-#else
-int sn65dsi86_read(struct i2c_client *client, int reg, uint8_t *val)
-{
-	*val = 0;
-	return -1;
-}
-
-int sn65dsi86_write(struct i2c_client *client, u8 reg, u8 val)
-{
-	return -1;
-}
-
-int sn65dsi86_update_bit(struct i2c_client *client, u8 reg, u8 mask, u8 data)
-{
-	return -1;
-}
-#endif
 
 #define sn65dsi86_read_poll_timeout(client, addr, val, cond, sleep_us, timeout_us) \
 ({ \
@@ -429,7 +426,6 @@ sn65dsi86_detect(struct sn65dsi86_data *sn65dsi86)
 			return_id[0], return_id[1], return_id[2], return_id[3], return_id[4], return_id[5], return_id[6], return_id[7]);
 	}
 
-	status = connector_status_connected;
 	sn65dsi86->status = status;
 
 	printk(KERN_INFO "%s sn65dsi86->status=%d\n", __func__, sn65dsi86->status);
@@ -469,7 +465,7 @@ static int sn65dsi86_attach_dsi(struct sn65dsi86_data *sn65dsi86)
 						 };
 	struct mipi_dsi_host *host;
 	struct mipi_dsi_device *dsi;
-	uint8_t val;
+	//uint8_t val;
 	int ret;
 	/*
 	 * TODO: ideally finding host resource and dsi dev registration needs
@@ -502,11 +498,11 @@ static int sn65dsi86_attach_dsi(struct sn65dsi86_data *sn65dsi86)
 	dsi->mode_flags = sn65dsi86->mode_flags;
 
 	/* check if continuous dsi clock is required or not */
-	pm_runtime_get_sync(sn65dsi86->dev);
-	sn65dsi86_read(sn65dsi86->client, SN_DPPLL_SRC_REG, &val);
-	pm_runtime_put(sn65dsi86->dev);
-	if (!(val & DPPLL_CLK_SRC_DSICLK))
-		dsi->mode_flags |= MIPI_DSI_CLOCK_NON_CONTINUOUS;
+	//pm_runtime_get_sync(sn65dsi86->dev);
+	//sn65dsi86_read(sn65dsi86->client, SN_DPPLL_SRC_REG, &val);
+	//pm_runtime_put(sn65dsi86->dev);
+	//if (!(val & DPPLL_CLK_SRC_DSICLK))
+	//	dsi->mode_flags |= MIPI_DSI_CLOCK_NON_CONTINUOUS;
 
 	printk("sn65dsi86_bridge_attach: lanes=%d format=%d mode_flags=0x%lx\n", dsi->lanes, dsi->format, dsi->mode_flags);
 
@@ -566,12 +562,18 @@ static void sn65dsi86_bridge_disable(struct drm_bridge *bridge)
 {
 	struct sn65dsi86_data *pdata = bridge_to_sn65dsi86(bridge);
 
-	printk(KERN_INFO "%s +\n", __func__);
+	printk(KERN_INFO "%s pdata->enabled =%d +\n", __func__, pdata->enabled);
+	if (!pdata->enabled)
+		return;
+
 	//drm_panel_disable(pdata->panel);
 	if (pdata->backlight) {
 		pdata->backlight->props.power = FB_BLANK_POWERDOWN;
 		backlight_update_status(pdata->backlight);
 	}
+
+	disable_irq(pdata->dsi86_irq);
+	sn65dsi86_enable_irq(pdata, false);
 
 	/* disable video stream */
 	sn65dsi86_update_bit(pdata->client, SN_ENH_FRAME_REG, VSTREAM_ENABLE, 0);
@@ -580,9 +582,12 @@ static void sn65dsi86_bridge_disable(struct drm_bridge *bridge)
 	/* disable DP PLL */
 	sn65dsi86_write(pdata->client, SN_PLL_ENABLE_REG, 0);
 
+	sn65dsi86_chip_shutdown(pdata);
+
 	//drm_panel_unprepare(pdata->panel);
 	edp_power_off(pdata);
 	msleep(pdata->t12);
+	pdata->enabled = false;
 
 	printk(KERN_INFO "%s -\n", __func__);
 }
@@ -852,14 +857,20 @@ static unsigned int sn65dsi86_get_max_lanes(struct sn65dsi86_data *pdata)
 static int sn65dsi86_link_training(struct sn65dsi86_data *pdata, int dp_rate_idx,
 			       const char **last_err_str)
 {
+	uint8_t PLL_result = 0;
 	uint8_t val;
 	int ret;
+
+	*last_err_str = "Link training successful";
 
 	/* set dp clk frequency value */
 	sn65dsi86_update_bit(pdata->client, SN_DATARATE_CONFIG_REG, DP_DATARATE_MASK, DP_DATARATE(dp_rate_idx));
 
 	/* enable DP PLL */
 	sn65dsi86_write(pdata->client, SN_PLL_ENABLE_REG, 1);
+	msleep(10);
+	sn65dsi86_read(pdata->client, 0x0A, &PLL_result);
+	printk("sn65dsi86_link_training: PLL_result=0x%x (%s)\n", PLL_result, PLL_result & BIT(7) ? "DP PLL locked" : "DP PLL not locked");
 
 	ret = sn65dsi86_read_poll_timeout(pdata->client, SN_DPPLL_SRC_REG, val,
 				       val & DPPLL_SRC_DP_PLL_LOCK, 1000,
@@ -890,6 +901,129 @@ exit:
 	return ret;
 }
 
+static void sn65dsi86_detailed_pixel_timing(unsigned char *buf, struct sn65dsi86_data *pdata, struct drm_display_mode *mode)
+{
+	unsigned hactive, vactive, hblank, vblank, hsync_offset, hsync_pulse_width, vsync_offset, vsync_pulse_width;
+	unsigned int temp_flags = 0;
+	struct detailed_pixel_timing {
+		u8 hactive_lo;
+		u8 hblank_lo;
+		u8 hactive_hblank_hi;
+		u8 vactive_lo;
+		u8 vblank_lo;
+		u8 vactive_vblank_hi;
+		u8 hsync_offset_lo;
+		u8 hsync_pulse_width_lo;
+		u8 vsync_offset_pulse_width_lo;
+		u8 hsync_vsync_offset_pulse_width_hi;
+		u8 width_mm_lo;
+		u8 height_mm_lo;
+		u8 width_height_mm_hi;
+		u8 hborder;
+		u8 vborder;
+		u8 misc;
+	} __attribute__((packed));
+	struct detailed_pixel_timing pt ;
+	#define DETAILED_MODE_ADDR  (0x36)
+
+	memcpy(&pt, buf + DETAILED_MODE_ADDR + 2, 16);
+	hactive = (pt.hactive_hblank_hi & 0xf0) << 4 | pt.hactive_lo;
+	vactive = (pt.vactive_vblank_hi & 0xf0) << 4 | pt.vactive_lo;
+	hblank = (pt.hactive_hblank_hi & 0xf) << 8 | pt.hblank_lo;
+	vblank = (pt.vactive_vblank_hi & 0xf) << 8 | pt.vblank_lo;
+	hsync_offset = (pt.hsync_vsync_offset_pulse_width_hi & 0xc0) << 2 | pt.hsync_offset_lo;
+	hsync_pulse_width = (pt.hsync_vsync_offset_pulse_width_hi & 0x30) << 4 | pt.hsync_pulse_width_lo;
+	vsync_offset = (pt.hsync_vsync_offset_pulse_width_hi & 0xc) << 2 | pt.vsync_offset_pulse_width_lo >> 4;
+	vsync_pulse_width = (pt.hsync_vsync_offset_pulse_width_hi & 0x3) << 4 | (pt.vsync_offset_pulse_width_lo & 0xf);
+
+	mode->clock = (buf[DETAILED_MODE_ADDR] + (buf[DETAILED_MODE_ADDR+1]<<8)) * 10;
+
+	mode->hdisplay = hactive;
+	mode->hsync_start = mode->hdisplay + hsync_offset;
+	mode->hsync_end = mode->hsync_start + hsync_pulse_width;
+	mode->htotal = mode->hdisplay + hblank;
+
+	mode->vdisplay = vactive;
+	mode->vsync_start = mode->vdisplay + vsync_offset;
+	mode->vsync_end = mode->vsync_start + vsync_pulse_width;
+	mode->vtotal = mode->vdisplay + vblank;
+	mode->width_mm = pt.width_mm_lo | (pt.width_height_mm_hi & 0xf0) << 4;
+	mode->height_mm = pt.height_mm_lo | (pt.width_height_mm_hi & 0xf) << 8;
+
+
+	mode->flags |= (pt.misc & DRM_EDID_PT_HSYNC_POSITIVE) ?
+		DRM_MODE_FLAG_PHSYNC : DRM_MODE_FLAG_NHSYNC;
+	mode->flags |= (pt.misc & DRM_EDID_PT_VSYNC_POSITIVE) ?
+		DRM_MODE_FLAG_PVSYNC : DRM_MODE_FLAG_NVSYNC;
+
+	mode->width_mm = pt.width_mm_lo | (pt.width_height_mm_hi & 0xf0) << 4;
+	mode->height_mm = pt.height_mm_lo | (pt.width_height_mm_hi & 0xf) << 8;
+	mode->vscan = 0;
+	mode->vrefresh = drm_mode_vrefresh(mode);
+	mode->flags |= (pt.misc & DRM_EDID_PT_HSYNC_POSITIVE) ?
+		DRM_MODE_FLAG_PHSYNC : DRM_MODE_FLAG_NHSYNC;
+	mode->flags |= (pt.misc & DRM_EDID_PT_VSYNC_POSITIVE) ?
+		DRM_MODE_FLAG_PVSYNC : DRM_MODE_FLAG_NVSYNC;
+
+	printk("Pixel Clock %dKHz\n", mode->clock);
+	printk("Resolution: %dx%d\n", mode->hdisplay, mode->vdisplay);
+	printk("Refresh rate = %d\n", mode->vrefresh);
+	printk("hsync_start =%d hsync_end = %d htotal = %d\n", mode->hsync_start, mode->hsync_end, mode->htotal);
+	printk("vsync_start =%d vsync_end = %d vtotal = %d\n", mode->vsync_start, mode->vsync_end, mode->vtotal);
+	printk("HFP =%d HSYNC = %d HBP= %d\n", mode->hsync_start - mode->hdisplay, mode->hsync_end - mode->hsync_start, mode->htotal - mode->hsync_end);
+	printk("VFP =%d VSYNC = %d VBP= %d\n", mode->vsync_start - mode->vdisplay, mode->vsync_end - mode->vsync_start, mode->vtotal - mode->vsync_end);
+	printk("hsync  Polarity = %s\n", (pt.misc & DRM_EDID_PT_HSYNC_POSITIVE) ? "Positive" : "Negative");
+	printk("vsync  Polarity = %s\n", (pt.misc & DRM_EDID_PT_VSYNC_POSITIVE) ? "Positive" : "Negative");
+	printk("Active Area: %dx%d mm\n", mode->width_mm, mode->height_mm);
+
+	pdata->vm.pixelclock = mode->clock*1000;
+	pdata->vm.hactive = mode->hdisplay;
+	pdata->vm.vactive = mode->vdisplay;
+
+	temp_flags |= (pt.misc & DRM_EDID_PT_HSYNC_POSITIVE) ?
+		DISPLAY_FLAGS_HSYNC_HIGH : DISPLAY_FLAGS_HSYNC_LOW;
+	temp_flags |= (pt.misc & DRM_EDID_PT_VSYNC_POSITIVE) ?
+		DISPLAY_FLAGS_VSYNC_HIGH : DISPLAY_FLAGS_VSYNC_LOW;
+	temp_flags |= (pdata->vm.flags & 0xF0);
+	pdata->vm.flags = temp_flags;
+	pdata->vm.hfront_porch = mode->hsync_start - mode->hdisplay;
+	pdata->vm.hsync_len = mode->hsync_end - mode->hsync_start;
+	pdata->vm.hback_porch = mode->htotal - mode->hsync_end;
+	pdata->vm.vfront_porch = mode->vsync_start - mode->vdisplay;
+	pdata->vm.vsync_len = mode->vsync_end - mode->vsync_start;
+	pdata->vm.vback_porch = mode->vtotal - mode->vsync_end;
+}
+
+static void showDPCDInfo(struct sn65dsi86_data *pdata)
+{
+	#define ASSR_SUPPORT				(1<<0)
+	#define ENHANCE_FRAMING			(1<<1)
+	#define DPCD_DISPLAY_CONTORL_CAP   (1<<3)
+	uint8_t buf[16];
+
+	drm_dp_dpcd_read(&pdata->aux, 0, buf, sizeof(buf));
+
+	printk("DPCD: REV:%d.%d, MAX_LINK_RATE:", (buf[0] >> 4), (buf[0]&0xF));
+	if (buf[1] == 0x06) {
+		printk("1.62Gbps");
+	} else if (buf[1] == 0x0A) {
+		printk("2.7Gbps");
+	}
+	printk(" MAX_LINK_LANE:%d\n", buf[2] & DP_LANE_COUNT_MASK);
+	if (buf[0x0D] & ASSR_SUPPORT) {
+		printk(" support ASSR");
+	} else {
+		printk(" not support ASSR");
+	}
+	if (buf[0x0D] & ENHANCE_FRAMING) {
+		printk(" support Enhance framing");
+	} else {
+		printk(" not support Enhance framing");
+	}
+	printk("\n");
+}
+
+#ifdef DIRECT_EDID_METHOD
 static int sn65dsi86_direct_read_edid(struct sn65dsi86_data *pdata)
 {
 	unsigned char buf[EDID_SIZE];
@@ -937,14 +1071,15 @@ end:
 			csum += buf[i];
 
 		printk("sn65dsi86_direct_read_edid checksum =%x\n", csum);
+		if (csum == 0)
+			sn65dsi86_detailed_pixel_timing(buf, pdata, &pdata->mode);
 	}
 
 	return r < 0 ? r : -EIO;
 }
+#endif
 
-static ssize_t sn65dsi86_read_edid(struct sn65dsi86_data *pdata);
-
-static void sn65dsi86_bridge_enable(struct drm_bridge *bridge)
+void sn65dsi86_bridge_enable(struct drm_bridge *bridge)
 {
 	struct sn65dsi86_data *pdata = bridge_to_sn65dsi86(bridge);
 	bool rate_valid[ARRAY_SIZE(sn65dsi86_bridge_dp_rate_lut)] = { };
@@ -953,11 +1088,149 @@ static void sn65dsi86_bridge_enable(struct drm_bridge *bridge)
 	unsigned int val;
 	int ret = -EINVAL;
 	int max_dp_lanes;
+	uint8_t training_result = 0, PLL_result = 0;
 
-	printk(KERN_INFO "%s +\n", __func__);
+	printk(KERN_INFO "%s  pdata->enabled = %d+\n", __func__, pdata->enabled);
 
-	sn65dsi86_direct_read_edid(pdata);
-	sn65dsi86_read_edid(pdata);
+	if (pdata->enabled)
+		return;
+
+	pm_runtime_get_sync(pdata->dev);
+
+if (0) {
+	edp_power_on(pdata);
+	msleep(pdata->t3);
+	sn65dsi86_chip_enable(pdata);
+
+#ifdef PWM_FROM_SN65DSI86
+	sn65dsi86_gpio4_to_pwm(pdata, true);
+	sn65dsi86_set_pwm_freq(pdata);
+#endif
+
+	//======REFCLK Frequency  ======
+	sn65dsi86_write(pdata->client, 0x0A,0x6);
+
+	sn65dsi86_update_bit(pdata->client, SN_HPD_DISABLE_REG, HPD_DISABLE,
+			   HPD_DISABLE);
+	showDPCDInfo(pdata);
+	//======DSI Mode  ======
+	sn65dsi86_write(pdata->client, 0x10, 0x26);
+
+	//======DSIA Clock  ======
+	sn65dsi86_write(pdata->client, 0x12, 0x55);
+
+	//======DSIB Clock  ======
+	sn65dsi86_write(pdata->client, 0x13, 0x55);
+
+	//======DP Datarate  ======
+	sn65dsi86_write(pdata->client, 0x94, 0x80);
+
+	//======Enable PLL  ======
+	sn65dsi86_write(pdata->client, 0x0D, 0x01);
+	msleep(10);
+	sn65dsi86_read(pdata->client, 0x0A, &PLL_result);
+	printk("sn65dsi86_bridge_enable: PLL_result=0x%x (%s)\n", PLL_result, PLL_result & BIT(7) ? "DP PLL locked" : "DP PLL not locked");
+
+	//======Enable ASSR in Panel  ======
+	drm_dp_dpcd_writeb(&pdata->aux, DP_EDP_CONFIGURATION_SET,
+			   DP_ALTERNATE_SCRAMBLER_RESET_ENABLE);
+	msleep(10);
+
+	//======Enable enhanced frame and ASSR in DSI86  ======
+	sn65dsi86_write(pdata->client, 0x5A, 0x05);
+
+	//======Number of DP lanes  ======
+	sn65dsi86_write(pdata->client, 0x93, 0x24);
+
+      //======Start Semi-Auto Link Training  =====
+	msleep(pdata->t4);
+	sn65dsi86_write(pdata->client, 0x96, 0x0A);
+	msleep(20);
+	sn65dsi86_read(pdata->client, 0x96, &training_result);
+	printk("sn65dsi86_bridge_enable: sn65dsi86_link_training: training_result=%d(%s)\n",
+		training_result, training_result == 0x1 ? "normal mode" : (training_result == 0x0 ? "main link off" : "unknow error"));
+
+	 sn65dsi86_read(pdata->client, 0xF8, &training_result);
+	 printk("sn65dsi86_bridge_enable: sn65dsi86_link_training: training status =0x%x(%s)\n", training_result, training_result == 0x1 ? "LT_PASS" : "LT_FAIL");
+
+	//======CHA Active Line Length  ======
+	sn65dsi86_write(pdata->client, 0x20, 0x80);
+	sn65dsi86_write(pdata->client, 0x21, 0x07);
+
+	//======CHB Active Line Length  ======
+	sn65dsi86_write(pdata->client, 0x22, 0x0);
+	sn65dsi86_write(pdata->client, 0x23, 0x0);
+
+	//======Vertical Active Size   ======
+	sn65dsi86_write(pdata->client, 0x24, 0x38);
+	sn65dsi86_write(pdata->client, 0x25, 0x04);
+
+	//======Horizontal Pulse Width   ======
+	sn65dsi86_write(pdata->client, 0x2C, 48);
+	sn65dsi86_write(pdata->client, 0x2D, 0x00);//polarity
+
+	//======Vertical Pulse Width   ======
+	sn65dsi86_write(pdata->client, 0x30, 10);
+	sn65dsi86_write(pdata->client, 0x31, 0x00);//polarity
+
+	//======HBP   ======
+	sn65dsi86_write(pdata->client, 0x34, 24);
+
+	//======VBP   ======
+	sn65dsi86_write(pdata->client, 0x36, 26);
+
+	//===== HFP  ======
+	sn65dsi86_write(pdata->client, 0x38, 108);
+
+	//===== VFP  ======
+	sn65dsi86_write(pdata->client, 0x3A, 10);
+
+	//===== DP-18BPP Disable  ======
+	sn65dsi86_write(pdata->client, 0x5B, 0x0);
+
+	//===== Color Bar Enable  ======
+	sn65dsi86_write(pdata->client, 0x3C, 0/*0x12*/);
+
+	//===== Enhanced Frame, ASSR, and Vstream Enable  ======
+	sn65dsi86_write(pdata->client, 0x5A, 0x0d);
+
+	if (pdata->backlight) {
+		msleep(pdata->t8);
+		pdata->backlight->props.power = FB_BLANK_UNBLANK;
+		backlight_update_status(pdata->backlight);
+	}
+
+	sn65dsi86_dump_status_register(pdata);
+	pdata->enabled = true;
+	sn65dsi86_enable_irq(pdata, true);
+	enable_irq(pdata->dsi86_irq);
+} else {
+	edp_power_on(pdata);
+	msleep(pdata->t3);
+	sn65dsi86_chip_enable(pdata);
+
+	/* configure bridge ref_clk */
+	sn65dsi86_bridge_set_refclk_freq(pdata);
+
+	/*
+	 * HPD on this bridge chip is a bit useless.  This is an eDP bridge
+	 * so the HPD is an internal signal that's only there to signal that
+	 * the panel is done powering up.  ...but the bridge chip debounces
+	 * this signal by between 100 ms and 400 ms (depending on process,
+	 * voltage, and temperate--I measured it at about 200 ms).  One
+	 * particular panel asserted HPD 84 ms after it was powered on meaning
+	 * that we saw HPD 284 ms after power on.  ...but the same panel said
+	 * that instead of looking at HPD you could just hardcode a delay of
+	 * 200 ms.  We'll assume that the panel driver will have the hardcoded
+	 * delay in its prepare and always disable HPD.
+	 *
+	 * If HPD somehow makes sense on some future panel we'll have to
+	 * change this to be conditional on someone specifying that HPD should
+	 * be used.
+	 */
+	sn65dsi86_update_bit(pdata->client, SN_HPD_DISABLE_REG, HPD_DISABLE,
+			   HPD_DISABLE);
+	showDPCDInfo(pdata);
 
 	max_dp_lanes = sn65dsi86_get_max_lanes(pdata);
 	pdata->dp_lanes = min(pdata->dp_lanes, max_dp_lanes);
@@ -982,6 +1255,14 @@ static void sn65dsi86_bridge_enable(struct drm_bridge *bridge)
 	 */
 	drm_dp_dpcd_writeb(&pdata->aux, DP_EDP_CONFIGURATION_SET,
 			   DP_ALTERNATE_SCRAMBLER_RESET_ENABLE);
+	msleep(10);
+
+	//======Enable enhanced frame and ASSR in DSI86  ======
+	sn65dsi86_update_bit(pdata->client, SN_ENH_FRAME_REG, AUTHEN_METHOD_MASK,
+			   SCRAMBLER_SEED_RESET);
+	sn65dsi86_update_bit(pdata->client, SN_ENH_FRAME_REG, ENH_FRAME_ENABLE,
+			   ENH_FRAME_ENABLE);
+
 
 	/* Set the DP output format (18 bpp or 24 bpp) */
 	val = (sn65dsi86_bridge_get_bpp(pdata) == 18) ? BPP_18_RGB : 0;
@@ -995,6 +1276,7 @@ static void sn65dsi86_bridge_enable(struct drm_bridge *bridge)
 	sn65dsi86_bridge_read_valid_rates(pdata, rate_valid);
 
 	/* Train until we run out of rates */
+	msleep(pdata->t4);
 	for (dp_rate_idx = sn65dsi86_bridge_calc_min_dp_rate_idx(pdata);
 	     dp_rate_idx < ARRAY_SIZE(sn65dsi86_bridge_dp_rate_lut);
 	     dp_rate_idx++) {
@@ -1008,8 +1290,17 @@ static void sn65dsi86_bridge_enable(struct drm_bridge *bridge)
 	if (ret) {
 		printk("sn65dsi86_bridge_enable: %s (%d)\n", last_err_str, ret);
 		//return;
+	} else {
+		printk("sn65dsi86_bridge_enable dp_rate_idx=%d\n", dp_rate_idx);
+		msleep(20);
+		sn65dsi86_read(pdata->client, SN_ML_TX_MODE_REG, &training_result);
+		printk("sn65dsi86_bridge_enable: sn65dsi86_link_training: training_result=%d(%s)\n",
+			training_result, training_result == 0x1 ? "normal mode" : (training_result == 0x0 ? "main link off" : "unknow error"));
+
+		sn65dsi86_read(pdata->client, SN_IRQ_STATUS8, &training_result);
+		printk("sn65dsi86_bridge_enable: sn65dsi86_link_training: training status =0x%x(%s)\n", training_result, training_result == 0x1 ? "LT_PASS" : "LT_FAIL");
 	}
-	printk("sn65dsi86_bridge_enable dp_rate_idx=%d\n", dp_rate_idx);
+
 	/* config video parameters */
 	sn65dsi86_bridge_set_video_timings(pdata);
 
@@ -1022,19 +1313,27 @@ static void sn65dsi86_bridge_enable(struct drm_bridge *bridge)
 
 	if (pdata->backlight) {
 		pdata->backlight->props.power = FB_BLANK_UNBLANK;
-		pdata->backlight->props.brightness = 255;
+		msleep(pdata->t8);
 		backlight_update_status(pdata->backlight);
 	}
 
 	//drm_panel_enable(pdata->panel);
+	pdata->enabled = true;
+
+	sn65dsi86_dump_status_register(pdata);
+	sn65dsi86_enable_irq(pdata, true);
+}
+
 	printk(KERN_INFO "%s -\n", __func__);
 }
 
 static void sn65dsi86_bridge_pre_enable(struct drm_bridge *bridge)
 {
+#if 0
 	struct sn65dsi86_data *pdata = bridge_to_sn65dsi86(bridge);
 
 	printk(KERN_INFO "%s +\n", __func__);
+
 
 	pm_runtime_get_sync(pdata->dev);
 
@@ -1062,7 +1361,9 @@ static void sn65dsi86_bridge_pre_enable(struct drm_bridge *bridge)
 
 	edp_power_on(pdata);
 	msleep(200);//edp t3
-
+#else
+	printk(KERN_INFO "%s +\n", __func__);
+#endif
 	//drm_panel_prepare(pdata->panel);
 	printk(KERN_INFO "%s -\n", __func__);
 }
@@ -1175,6 +1476,7 @@ static ssize_t sn65dsi86_aux_transfer(struct drm_dp_aux *aux,
 	return msg->size;
 }
 
+#ifndef DIRECT_EDID_METHOD
 static ssize_t sn65dsi86_send_aux_cmd(struct sn65dsi86_data *pdata, u32 request_val)
 {
 	int retry = 0, ret;
@@ -1278,8 +1580,13 @@ static ssize_t sn65dsi86_read_edid(struct sn65dsi86_data *pdata)
 		csum += buf[i];
 
 	printk("sn65dsi86_read_edid checksum =%x -\n", csum);
+
+	if (csum == 0)
+		sn65dsi86_detailed_pixel_timing(buf, pdata, &pdata->mode);
+
 	return index;
 }
+#endif
 
 static int sn65dsi86_bridge_parse_dsi_host(struct sn65dsi86_data *pdata)
 {
@@ -1364,6 +1671,7 @@ static void sn65dsi86_bridge_parse_lanes(struct sn65dsi86_data *pdata,
 	printk("sn65dsi86_bridge_parse_lanes dp_lanes=%d ln_assign=0x%x ln_polrs=0x%x\n", dp_lanes, ln_assign, ln_polrs);
 }
 
+#ifdef PWM_FROM_SN65DSI86
 static void sn65dsi86_gpio4_to_pwm(struct sn65dsi86_data *pdata, bool enable)
 {
 	int val;
@@ -1467,6 +1775,7 @@ static const struct backlight_ops sn65dsi86_bl_ops = {
 	.update_status	= sn65dsi86_bl_update_status,
 	.options 			= BL_CORE_SUSPENDRESUME,
 };
+#endif
 
 static const struct display_timing asus_sn65dsi86_default_mode = {
 	.pixelclock = { 141000000, 141000000, 141000000 },
@@ -1487,6 +1796,9 @@ static const struct display_timing asus_sn65dsi86_default_mode = {
 static int sn65dsi86_parse_dt(struct device_node *np,
 			   struct sn65dsi86_data *data)
 {
+	#ifndef PWM_FROM_SN65DSI86
+	struct device_node *backlight;
+	#endif
 	struct device_node *endpoint;
 	struct device *dev = data->dev;
 	int ret;
@@ -1531,6 +1843,7 @@ static int sn65dsi86_parse_dt(struct device_node *np,
 	ret = of_property_read_u32(dev->of_node,"t5", &data->t5);
 	ret = of_property_read_u32(dev->of_node,"t6", &data->t6);
 	ret = of_property_read_u32(dev->of_node,"t7", &data->t7);
+	ret = of_property_read_u32(dev->of_node,"t8", &data->t8);
 	ret = of_property_read_u32(dev->of_node,"t12", &data->t12);
 	ret = of_property_read_u32(dev->of_node,"t14", &data->t14);
 	ret = of_property_read_u32(dev->of_node,"t15", &data->t15);
@@ -1546,8 +1859,8 @@ static int sn65dsi86_parse_dt(struct device_node *np,
 		data->vm.vfront_porch, data->vm.vsync_len, data->vm.vback_porch);
 	printk(KERN_INFO "sn65dsi86_parse_dt bus_format=%x data->bpc=%u format =%u mode_flags=%u\n",
 		data->bus_format, data->bpc, data->format, data->mode_flags);
-	printk(KERN_INFO "sn65dsi86_parse_dt t1=%u t2=%u t3=%u t4=%u t5=%u t6=%u t7=%u\n",
-		data->t1, data->t2, data->t3, data->t4, data->t5, data->t6, data->t7);
+	printk(KERN_INFO "sn65dsi86_parse_dt t1=%u t2=%u t3=%u t4=%u t5=%u t6=%u t7=%u t8=%u t12=%u\n",
+		data->t1, data->t2, data->t3, data->t4, data->t5, data->t6, data->t7, data->t8, data->t12);
 
 	if (ret < 0) {
 		videomode_from_timing(&asus_sn65dsi86_default_mode, &data->vm);
@@ -1563,10 +1876,12 @@ static int sn65dsi86_parse_dt(struct device_node *np,
 		printk(KERN_INFO "sn65dsi86_parse_dt :data->edp_vdd_en_gpio\n");
 	}
 
+#ifdef PWM_FROM_SN65DSI86
 	data->dsi86_vbl_en_gpio = devm_gpiod_get_optional(dev, "dsi86_vbl_en", GPIOD_OUT_LOW);
 	if (IS_ERR(data->dsi86_vbl_en_gpio)) {
 		printk(KERN_INFO "sn65dsi86_parse_dt :data->dsi86_vbl_en_gpio\n");
 	}
+#endif
 
 	//data->dsi86_irq_gpio = of_get_named_gpio_flags(np, "dsi86_irq", 0, (enum of_gpio_flags *)&irq_flags);
 	//printk(KERN_INFO "sn65dsi86_parse_dt  dsi86_irq_gpio=%u\n", data->dsi86_irq_gpio);
@@ -1575,9 +1890,7 @@ static int sn65dsi86_parse_dt(struct device_node *np,
 		printk(KERN_INFO "sn65dsi86_parse_dt :data->dsi86_irq_gpio\n");
 	}
 
-
-#if 0
-	struct device_node *backlight;
+#ifndef PWM_FROM_SN65DSI86
 	backlight = of_parse_phandle(dev->of_node, "backlight", 0);
 	if (backlight) {
 		data->backlight = of_find_backlight_by_node(backlight);
@@ -1613,29 +1926,28 @@ static irqreturn_t sn65dsi86_irq(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static void sn65dsi86_irq_worker(struct work_struct *work)
+static void sn65dsi86_dump_status_register(struct sn65dsi86_data *sn65dsi86)
 {
-	struct sn65dsi86_data *sn65dsi86 = container_of(work, struct sn65dsi86_data, work);
 	uint8_t val = 0xFF;
 
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS0, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS0 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS0 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS1, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS1 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS1 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS2, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS2 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS2 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS3, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS3 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS3 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS4, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS4 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS4 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS5, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS5 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS5 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS6, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS6 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS6 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS7, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS7 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS7 = %x\n", val);
 	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS8, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker SN_IRQ_STATUS8 = %x\n", val);
+	printk(KERN_ERR "sn65dsi86_dump_status_register: SN_IRQ_STATUS8 = %x\n", val);
 
 	sn65dsi86_write(sn65dsi86->client, SN_IRQ_STATUS0, 0xFF);
 	sn65dsi86_write(sn65dsi86->client, SN_IRQ_STATUS1, 0xFF);
@@ -1646,26 +1958,14 @@ static void sn65dsi86_irq_worker(struct work_struct *work)
 	sn65dsi86_write(sn65dsi86->client, SN_IRQ_STATUS6, 0xFF);
 	sn65dsi86_write(sn65dsi86->client, SN_IRQ_STATUS7, 0xFF);
 	sn65dsi86_write(sn65dsi86->client, SN_IRQ_STATUS8, 0xFF);
-	msleep(2);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS0, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS0 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS1, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS1 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS2, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS2 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS3, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS3 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS4, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS4 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS5, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS5 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS6, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS8 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS7, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS7 = %x\n", val);
-	sn65dsi86_read(sn65dsi86->client, SN_IRQ_STATUS8, &val);
-	printk(KERN_ERR "error: sn65dsi86_irq_worker, the 2nd SN_IRQ_STATUS8 = %x\n", val);
+}
 
+static void sn65dsi86_irq_worker(struct work_struct *work)
+{
+	struct sn65dsi86_data *sn65dsi86 = container_of(work, struct sn65dsi86_data, work);
+
+	printk(KERN_ERR "sn65dsi86_irq_worker\n");
+	sn65dsi86_dump_status_register(sn65dsi86);
 	enable_irq(sn65dsi86->dsi86_irq);
 }
 
@@ -1684,11 +1984,81 @@ void sn65dsi86_enable_irq(struct sn65dsi86_data *sn65dsi86, bool enable)
 	sn65dsi86_write(sn65dsi86->client, SN_IRQ_EN, enable ? 1 : 0);
 }
 
+static ssize_t sn65dsi86_reg_show(struct device *dev, struct device_attribute *attr, char *buf2)
+{
+	struct sn65dsi86_data *sn65dsi86 = dev_get_drvdata(dev);
+
+	sn65dsi86_dump_status_register(sn65dsi86);
+
+	return 0;
+}
+
+static ssize_t sn65dsi86_reg_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sn65dsi86_data *sn65dsi86 = dev_get_drvdata(dev);
+	unsigned val;
+	int ret;
+	char *endp;
+	unsigned reg = simple_strtol(buf, &endp, 16);
+
+	if (reg > 0xe5)
+		return count;
+
+	if (!endp)
+		return count;
+
+	printk("%s: %c\n", __func__, *endp);
+	val = simple_strtol(endp+1, &endp, 16);
+	if (val >= 0x100)
+		return count;
+
+	printk("%s:reg=0x%x, val=0x%x\n", __func__, reg, val);
+	ret = sn65dsi86_write(sn65dsi86->client, reg, val);
+	if (ret < 0)
+		return ret;
+
+	return strnlen(buf, count);
+}
+
+static DEVICE_ATTR(sn65dsi86_reg, S_IRUGO | S_IWUSR, sn65dsi86_reg_show, sn65dsi86_reg_store);
+
+static struct attribute *sn65dsi86_attributes[] = {
+	&dev_attr_sn65dsi86_reg.attr,
+	NULL
+};
+
+static const struct attribute_group sn65dsi86_attr_group = {
+	.attrs = sn65dsi86_attributes,
+};
+
+static void sn65dsi86_proch_from_edid(struct sn65dsi86_data *sn65dsi86)
+{
+	edp_power_on(sn65dsi86);
+	msleep(sn65dsi86->t3);
+	sn65dsi86_chip_enable(sn65dsi86);
+
+	//======REFCLK Frequency  ======
+	sn65dsi86_write(sn65dsi86->client, 0x0A,0x6);
+	sn65dsi86_update_bit(sn65dsi86->client, SN_HPD_DISABLE_REG, HPD_DISABLE,
+			   HPD_DISABLE);
+
+	#ifdef DIRECT_EDID_METHOD
+	sn65dsi86_direct_read_edid(sn65dsi86);
+	#else
+	sn65dsi86_read_edid(sn65dsi86);
+	#endif
+
+	edp_power_off(sn65dsi86);
+	sn65dsi86_chip_shutdown(sn65dsi86);
+}
+
 static int sn65dsi86_probe(struct i2c_client *client,
 			      const struct i2c_device_id *id)
 {
 	struct sn65dsi86_data *sn65dsi86;
+	#ifdef PWM_FROM_SN65DSI86
 	struct backlight_properties props;
+	#endif
 	int ret;
 
 	printk(KERN_INFO "%s +\n", __func__);
@@ -1702,6 +2072,7 @@ static int sn65dsi86_probe(struct i2c_client *client,
 	if (!sn65dsi86)
 		return -ENOMEM;
 
+	client->dev.driver_data = sn65dsi86;
 	sn65dsi86->dev = &client->dev;
 	sn65dsi86->client = client;
 	sn65dsi86->enabled = false;
@@ -1728,15 +2099,8 @@ static int sn65dsi86_probe(struct i2c_client *client,
 		printk(KERN_INFO "%s : sn65dsi86 is %s !\n", __func__, sn65dsi86->status ? "connected" : "disconnected");
 		sn65dsi86_exist  = true;
 	}
-	//sn65dsi86_chip_shutdown(sn65dsi86);
 
 	sn65dsi86_bridge_parse_lanes(sn65dsi86, client->dev.of_node);
-
-	//ret = ti_sn_bridge_parse_regulators(pdata);
-	//if (ret) {
-	//	DRM_ERROR("failed to parse regulators\n");
-	//	return ret;
-	//}
 
 	sn65dsi86->refclk = devm_clk_get(sn65dsi86->dev, "refclk");
 	if (IS_ERR(sn65dsi86->refclk)) {
@@ -1752,8 +2116,6 @@ static int sn65dsi86_probe(struct i2c_client *client,
 		return ret;
 
 	pm_runtime_enable(sn65dsi86->dev);
-
-	//ret = ti_sn_setup_gpio_controller(sn65dsi86);
 
 	i2c_set_clientdata(client, sn65dsi86);
 
@@ -1771,6 +2133,7 @@ static int sn65dsi86_probe(struct i2c_client *client,
 
 	sn65dsi86_debugfs_init(sn65dsi86);
 
+#ifdef PWM_FROM_SN65DSI86
 	sn65dsi86_gpio4_to_pwm(sn65dsi86, true);
 	sn65dsi86_set_pwm_freq(sn65dsi86);
 	memset(&props, 0, sizeof(props));
@@ -1778,6 +2141,7 @@ static int sn65dsi86_probe(struct i2c_client *client,
 	props.max_brightness = MAX_BRIGHENESS;
 	sn65dsi86->backlight = backlight_device_register("edp_backlight", NULL, NULL,
 					   &sn65dsi86_bl_ops, &props);
+#endif
 
 	INIT_WORK(&sn65dsi86->work, sn65dsi86_irq_worker);
 	sn65dsi86->wq = create_singlethread_workqueue("sn65dsi86_irq_wq");
@@ -1794,7 +2158,12 @@ static int sn65dsi86_probe(struct i2c_client *client,
 		printk(KERN_ERR  "error: sn65dsi86_probe, unable to request irq for device %s.\n", DRIVER_NAME);
 	}
 
+	disable_irq(sn65dsi86->dsi86_irq);
 	sn65dsi86_enable_irq(sn65dsi86, false);
+	sn65dsi86_proch_from_edid(sn65dsi86);
+	sn65dsi86_chip_shutdown(sn65dsi86);
+
+	 ret = sysfs_create_group(&client->dev.kobj, &sn65dsi86_attr_group);
 
 	printk(KERN_INFO "%s -\n", __func__);
 	return 0;
