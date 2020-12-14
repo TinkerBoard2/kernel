@@ -789,7 +789,7 @@
 		soc_thermal: soc-thermal {
 			polling-delay-passive = <20>; /* milliseconds */
 			polling-delay = <1000>; /* milliseconds */
-			sustainable-power = <1761>; /* milliwatts */
+			sustainable-power = <1990>; /* milliwatts */
 
 			thermal-sensors = <&tsadc 0>;
 
