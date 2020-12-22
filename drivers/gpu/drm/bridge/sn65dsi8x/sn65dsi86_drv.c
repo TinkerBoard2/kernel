@@ -1322,6 +1322,7 @@ if (0) {
 
 	sn65dsi86_dump_status_register(pdata);
 	sn65dsi86_enable_irq(pdata, true);
+	enable_irq(pdata->dsi86_irq);
 }
 
 	printk(KERN_INFO "%s -\n", __func__);
