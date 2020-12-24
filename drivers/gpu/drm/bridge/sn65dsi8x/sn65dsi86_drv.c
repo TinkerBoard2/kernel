@@ -2247,6 +2247,6 @@ static void __exit sn65dsi86_exit(void)
 }
 module_exit(sn65dsi86_exit);
 
-MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
-MODULE_DESCRIPTION("sn65dsi86 HDMI transmitter driver");
+MODULE_AUTHOR("ASUS");
+MODULE_DESCRIPTION("sn65dsi86 mipi to edp driver");
 MODULE_LICENSE("GPL");
