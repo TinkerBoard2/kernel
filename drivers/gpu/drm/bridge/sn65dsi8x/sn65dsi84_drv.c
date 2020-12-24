@@ -75,6 +75,11 @@
 #define CHA_24BPP_FMT1_OFFSET 	(1)
 #define CHB_24BPP_FMT1_OFFSET 	(0)
 
+#define MULTIPLY_BY_1	(1)
+#define MULTIPLY_BY_2	(2)
+#define MULTIPLY_BY_3	(3)
+#define MULTIPLY_BY_4	(4)
+
 static bool switch_to_lvds = false;
 
 bool hdmi_lvds_switch(void)
@@ -216,7 +221,8 @@ static unsigned int sn65dsi84_clk_src(struct sn65dsi84_data *sn65dsi84)
 		val = 5;
 
 	val = (val << LVDS_CLK_RANGE_OFFSET);
-	val |= (1 << HS_CLK_SRC_OFFSET);
+	if (!sn65dsi84->clk_from_refclk)
+		val |= (1 << HS_CLK_SRC_OFFSET);
 	printk(KERN_INFO "%s val=%x\n", __func__, val);
 
 	return val;
@@ -241,6 +247,27 @@ static unsigned int sn65dsi84_clk_div(struct sn65dsi84_data *sn65dsi84)
 
 	return val;
 }
+
+static unsigned int sn65dsi84_refclk_multiplier(struct sn65dsi84_data *sn65dsi84)
+{
+	unsigned int val = 0;
+
+	if (sn65dsi84->refclk_multiplier == MULTIPLY_BY_1)
+		val = 0;
+	else if (sn65dsi84->refclk_multiplier == MULTIPLY_BY_2)
+		val = BIT(0);
+	else if (sn65dsi84->refclk_multiplier == MULTIPLY_BY_3)
+		val = BIT(1);
+	else if (sn65dsi84->refclk_multiplier == MULTIPLY_BY_4)
+		val = BIT(0) | BIT(1);
+	else
+		val = BIT(1);
+
+	printk(KERN_INFO "%s val=%x\n", __func__, val);
+
+	return val;
+}
+
 
 static unsigned int sn65dsi84_dsi_clk(struct sn65dsi84_data *sn65dsi84)
 {
@@ -318,7 +345,10 @@ static void sn65dsi84_init_csr_registers(struct sn65dsi84_data *sn65dsi84)
 	sn65dsi84_write(sn65dsi84->client, SN_PLL_EN, 0x00);
 	msleep(10);
 	sn65dsi84_write(sn65dsi84->client, SN_CLK_SRC, sn65dsi84_clk_src(sn65dsi84));//0x05
-	sn65dsi84_write(sn65dsi84->client, SN_CLK_DIV, sn65dsi84_clk_div(sn65dsi84));//0x28
+	if (sn65dsi84->clk_from_refclk)
+		sn65dsi84_write(sn65dsi84->client, SN_CLK_DIV, sn65dsi84_refclk_multiplier(sn65dsi84));
+	else
+		sn65dsi84_write(sn65dsi84->client, SN_CLK_DIV, sn65dsi84_clk_div(sn65dsi84));//0x28
 #endif
 	/* Configure DSI_LANES  */
 	sn65dsi84_read(sn65dsi84->client, SN_DSI_LANES, &val);
@@ -833,8 +863,10 @@ static int sn65dsi84_parse_dt(struct device_node *np,
 	ret = of_property_read_u32(np, "lvds-width-mm", &data->width_mm);
 	ret = of_property_read_u32(np, "lvds-height-mm", &data->height_mm);
 	ret = of_property_read_u32(np, "sync_delay", &data->sync_delay);
+	ret = of_property_read_u32(np, "refclk_multiplier", &data->refclk_multiplier);
 	data->test_pattern_en = of_property_read_bool(np, "test-pattern");
 	data->dual_link = of_property_read_bool(np, "dual-link");
+	data->clk_from_refclk = of_property_read_bool(np, "clk_from_refclk");
 
 	ret = of_property_read_u32(dev->of_node, "bus-format", &data->bus_format);
 	ret = of_property_read_u32(dev->of_node, "bpc", &data->bpc);

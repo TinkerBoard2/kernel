@@ -32,8 +32,10 @@ struct sn65dsi84_data {
 	unsigned int width_mm;
 	unsigned int height_mm;
 	unsigned int sync_delay;
+	unsigned int refclk_multiplier;
 	bool test_pattern_en;
 	bool dual_link;
+	bool clk_from_refclk;
 	bool enabled;
 
 	bool powered;
