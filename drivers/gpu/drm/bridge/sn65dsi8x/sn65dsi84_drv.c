@@ -198,7 +198,7 @@ static void sn65dsi84_chip_shutdown(struct sn65dsi84_data *sn65dsi84)
 
 static void sn65dsi84_enable_irq(struct sn65dsi84_data *sn65dsi84, bool enable)
 {
-	sn65dsi84_write(sn65dsi84->client, SN_IRQ_MASK, 0xFF);
+	sn65dsi84_write(sn65dsi84->client, SN_IRQ_MASK, enable ? 0xFF : 0);
 	sn65dsi84_write(sn65dsi84->client, SN_IRQ_EN, enable ? 0x1 : 0);
 }
 
@@ -677,6 +677,7 @@ static void sn65dsi84_bridge_disable(struct drm_bridge *bridge)
 		return;
 
 	disable_irq(sn65dsi84->dsi84_irq);
+	sn65dsi84_enable_irq(sn65dsi84, false);
 
 	if (sn65dsi84->backlight) {
         	sn65dsi84->backlight->props.power = FB_BLANK_POWERDOWN;
