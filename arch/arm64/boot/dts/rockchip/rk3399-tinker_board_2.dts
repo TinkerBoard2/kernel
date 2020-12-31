@@ -42,13 +42,12 @@
 
 /dts-v1/;
 
-#include "rk3399-excavator-sapphire.dtsi"
-#include "rk3399-linux.dtsi"
+#include "rk3399-tinker_board_2.dtsi"
 #include <dt-bindings/input/input.h>
 
 / {
-	model = "Rockchip RK3399 Excavator Board (Linux Opensource)";
-	compatible = "rockchip,rk3399-excavator-linux", "rockchip,rk3399";
+	model = "ASUS Tinker Board 2 (Linux Opensource)";
+	compatible = "rockchip,rk3399-tinker_board_2", "rockchip,rk3399";
 
 	vcc_lcd: vcc-lcd {
 		compatible = "regulator-fixed";
