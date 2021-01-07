@@ -360,7 +360,7 @@ static void sn65dsi84_init_csr_registers(struct sn65dsi84_data *sn65dsi84)
 	sn65dsi84_write(sn65dsi84->client, SN_DSI_CLK, sn65dsi84_dsi_clk(sn65dsi84));//0x56
 	sn65dsi84_write(sn65dsi84->client, 0x13, 0x00);
 	sn65dsi84_write(sn65dsi84->client, SN_FORMAT, sn65dsi84_format(sn65dsi84));//0x06
-	sn65dsi84_write(sn65dsi84->client, SN_LVDS_VOLTAGE, 0x00);//Dis tuner tool suggest 0x0.
+	sn65dsi84_write(sn65dsi84->client, SN_LVDS_VOLTAGE, sn65dsi84->lvds_voltage);//Dis tuner tool suggest 0x0.
 	sn65dsi84_write(sn65dsi84->client, SN_LVDS_TERM, 0x03);
 	sn65dsi84_write(sn65dsi84->client, SN_LVDS_CM_VOLTAGE, 0x00);
 
@@ -865,6 +865,12 @@ static int sn65dsi84_parse_dt(struct device_node *np,
 	ret = of_property_read_u32(np, "lvds-height-mm", &data->height_mm);
 	ret = of_property_read_u32(np, "sync_delay", &data->sync_delay);
 	ret = of_property_read_u32(np, "refclk_multiplier", &data->refclk_multiplier);
+	ret = of_property_read_u32(np, "lvds_voltage", &data->lvds_voltage);
+	if (ret) {
+		data->lvds_voltage = 0x0F;
+		printk(KERN_INFO "sn65dsi84_parse_dt use 0xF as default value for lvds_voltage\n");
+	}
+
 	data->test_pattern_en = of_property_read_bool(np, "test-pattern");
 	data->dual_link = of_property_read_bool(np, "dual-link");
 	data->clk_from_refclk = of_property_read_bool(np, "clk_from_refclk");
@@ -890,6 +896,7 @@ static int sn65dsi84_parse_dt(struct device_node *np,
 		data->vm.hfront_porch, data->vm.hsync_len, data->vm.hback_porch);
 	printk(KERN_INFO "sn65dsi84_parse_dt vfront_porch=%u vsync_len=%u vback_porch=%u \n",
 		data->vm.vfront_porch, data->vm.vsync_len, data->vm.vback_porch);
+	printk(KERN_INFO "sn65dsi84_parse_dt refclk_multiplier=%u lvds_voltage=0x%x\n", data->refclk_multiplier, data->lvds_voltage);
 	printk(KERN_INFO "sn65dsi84_parse_dt bus_format=%x data->bpc=%u format =%u mode_flags=%u\n",
 		data->bus_format, data->bpc, data->format, data->mode_flags);
 	printk(KERN_INFO "sn65dsi84_parse_dt t1=%u t2=%u t3=%u t4=%u t5=%u t6=%u t7=%u\n",
@@ -1222,6 +1229,8 @@ static int sn65dsi84_remove(struct i2c_client *i2c)
 static void  sn65dsi84_shutdown(struct i2c_client *i2c)
 {
 	struct sn65dsi84_data *sn65dsi84 = i2c_get_clientdata(i2c);
+
+	printk("sn65dsi84_shutdown\n");
 
 	sn65dsi84_bridge_disable(&sn65dsi84->bridge);
 

@@ -33,6 +33,7 @@ struct sn65dsi84_data {
 	unsigned int height_mm;
 	unsigned int sync_delay;
 	unsigned int refclk_multiplier;
+	unsigned int lvds_voltage;
 	bool test_pattern_en;
 	bool dual_link;
 	bool clk_from_refclk;
