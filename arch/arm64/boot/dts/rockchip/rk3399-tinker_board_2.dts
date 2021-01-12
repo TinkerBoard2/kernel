@@ -250,7 +250,7 @@
 		default-brightness-level = <200>;
 		minimal-brightness-level = <26>;
 		soc_enablekl-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
-		enable_dealy = <15>;
+		enable_delay = <15>;
 		disable_delay = <5>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_lvds_bl_en>;

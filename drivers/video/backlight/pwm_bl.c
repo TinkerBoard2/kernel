@@ -102,8 +102,8 @@ static void pwm_backlight_power_off(struct pwm_bl_data *pb)
 	pwm_disable(pb->pwm);
 
 	if (pb->power_sequence_reverse) {
-		if (pb->enable_soc_enablekl_delay)
-			msleep(pb->enable_soc_enablekl_delay);
+		if (pb->disable_soc_enablekl_delay)
+			msleep(pb->disable_soc_enablekl_delay);
 
 		if (pb->soc_enablekl)
 			gpiod_set_value_cansleep(pb->soc_enablekl, 0);
@@ -294,9 +294,9 @@ static int pwm_backlight_probe(struct platform_device *pdev)
 	pb->dev = &pdev->dev;
 	pb->enabled = false;
 
-	of_property_read_u32(node, "enable_dealy",
+	of_property_read_u32(node, "enable_delay",
 					   &pb->enable_soc_enablekl_delay);
-	of_property_read_u32(node, "disable_dealy",
+	of_property_read_u32(node, "disable_delay",
 					   &pb->disable_soc_enablekl_delay);
 	pb->power_sequence_reverse = of_property_read_bool(node, "power-sequence-reverse");
 
