@@ -970,11 +970,14 @@ static void sn65dsi84_irq_worker(struct work_struct *work)
 	uint8_t val = 0xFF;
 
 	sn65dsi84_read(sn65dsi84->client, SN_IRQ_STAT, &val);
-	printk(KERN_ERR "error: sn65dsi84_irq_worker SN_IRQ_STAT = %x\n", val);
+	if (sn65dsi84->debug)
+		printk(KERN_ERR "error: sn65dsi84_irq_worker SN_IRQ_STAT = %x\n", val);
+
 	sn65dsi84_write(sn65dsi84->client, SN_IRQ_STAT, 0xFF);
 	msleep(2);
 	sn65dsi84_read(sn65dsi84->client, SN_IRQ_STAT, &val);
-	printk(KERN_ERR "error: sn65dsi84_irq_worker, the 2nd SN_IRQ_STAT = %x\n", val);
+	if (sn65dsi84->debug)
+		printk(KERN_ERR "error: sn65dsi84_irq_worker, the 2nd SN_IRQ_STAT = %x\n", val);
 
 	enable_irq(sn65dsi84->dsi84_irq);
 }
@@ -1113,12 +1116,36 @@ static ssize_t sn65dsi84_reg_store(struct device *dev, struct device_attribute *
 	return strnlen(buf, count);
 }
 
+static ssize_t sn65dsi84_debug_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sn65dsi84_data *sn65dsi84 = dev_get_drvdata(dev);
+	unsigned long debug;
+	int rc;
+
+	rc = kstrtoul(buf, 0, &debug);
+	if (rc)
+		return rc;
+
+	sn65dsi84->debug = !!debug;
+
+	return strnlen(buf, count);
+}
+
+static ssize_t sn65dsi84_debug_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct sn65dsi84_data *sn65dsi84 = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%d\n", sn65dsi84->debug);
+}
+
 static DEVICE_ATTR(sn65dsi84_reinit, S_IRUGO | S_IWUSR, NULL, sn65dsi84_store);
 static DEVICE_ATTR(sn65dsi84_reg, S_IRUGO | S_IWUSR, sn65dsi84_reg_show, sn65dsi84_reg_store);
+static DEVICE_ATTR(sn65dsi84_debug, S_IRUGO | S_IWUSR, sn65dsi84_debug_show, sn65dsi84_debug_store);
 
 static struct attribute *sn65dsi84_attributes[] = {
 	&dev_attr_sn65dsi84_reinit.attr,
 	&dev_attr_sn65dsi84_reg.attr,
+	&dev_attr_sn65dsi84_debug.attr,
 	NULL
 };
 

@@ -38,6 +38,7 @@ struct sn65dsi84_data {
 	bool dual_link;
 	bool clk_from_refclk;
 	bool enabled;
+	bool debug;
 
 	bool powered;
 
