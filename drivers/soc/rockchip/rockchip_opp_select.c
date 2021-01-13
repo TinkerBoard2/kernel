@@ -780,10 +780,8 @@ int rockchip_adjust_power_scale(struct device *dev, int scale)
 				dev_err(dev, "Failed to adjust opp table\n");
 		}
 	} else {
-		if (opp_scale >= target_scale) {
-			dev_info(dev, "opp_scale >= target_scale\n");
-			//goto out_clk;
-		}
+		if (opp_scale >= target_scale)
+			goto out_clk;
 		scale_rate = rockchip_pll_clk_scale_to_rate(clk, target_scale);
 		if (scale_rate <= 0) {
 			dev_err(dev, "Failed to get scale rate, %d\n",
