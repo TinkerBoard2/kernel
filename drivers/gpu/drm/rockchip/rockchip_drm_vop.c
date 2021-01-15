@@ -289,6 +289,9 @@ struct vop {
 	struct vop_win win[];
 };
 
+static void vop_tv_config_update(struct drm_crtc *crtc,
+				 struct drm_crtc_state *old_crtc_state);
+
 static void vop_lock(struct vop *vop)
 {
 	mutex_lock(&vop->vop_lock);
@@ -911,8 +914,11 @@ static int to_vop_csc_mode(int csc_mode)
 {
 	switch (csc_mode) {
 	case V4L2_COLORSPACE_SMPTE170M:
+	case V4L2_COLORSPACE_470_SYSTEM_M:
+	case V4L2_COLORSPACE_470_SYSTEM_BG:
 		return CSC_BT601L;
 	case V4L2_COLORSPACE_REC709:
+	case V4L2_COLORSPACE_SMPTE240M:
 	case V4L2_COLORSPACE_DEFAULT:
 		return CSC_BT709L;
 	case V4L2_COLORSPACE_JPEG:
@@ -1001,10 +1007,15 @@ static int vop_setup_csc_table(const struct vop_csc_table *csc_table,
 				*r2r_table = csc_table->r2r_bt2020_to_bt709;
 			if (!is_input_yuv || *y2r_table) {
 				if (output_csc == V4L2_COLORSPACE_REC709 ||
+				    output_csc == V4L2_COLORSPACE_SMPTE240M ||
 				    output_csc == V4L2_COLORSPACE_DEFAULT)
 					*r2y_table = csc_table->r2y_bt709;
+				else if (output_csc == V4L2_COLORSPACE_SMPTE170M ||
+					 output_csc == V4L2_COLORSPACE_470_SYSTEM_M ||
+					 output_csc == V4L2_COLORSPACE_470_SYSTEM_BG)
+					*r2y_table = csc_table->r2y_bt601_12_235; /* bt601 limit */
 				else
-					*r2y_table = csc_table->r2y_bt601;
+					*r2y_table = csc_table->r2y_bt601; /* bt601 full */
 			}
 		}
 	} else {
@@ -1019,11 +1030,16 @@ static int vop_setup_csc_table(const struct vop_csc_table *csc_table,
 
 		if (input_csc == V4L2_COLORSPACE_BT2020)
 			*y2r_table = csc_table->y2r_bt2020;
-		else if ((input_csc == V4L2_COLORSPACE_REC709) ||
-			 (input_csc == V4L2_COLORSPACE_DEFAULT))
+		else if (input_csc == V4L2_COLORSPACE_REC709 ||
+			 input_csc == V4L2_COLORSPACE_SMPTE240M ||
+			 input_csc == V4L2_COLORSPACE_DEFAULT)
 			*y2r_table = csc_table->y2r_bt709;
+		else if (input_csc == V4L2_COLORSPACE_SMPTE170M ||
+			 input_csc == V4L2_COLORSPACE_470_SYSTEM_M ||
+			 input_csc == V4L2_COLORSPACE_470_SYSTEM_BG)
+			*y2r_table = csc_table->y2r_bt601_12_235; /* bt601 limit */
 		else
-			*y2r_table = csc_table->y2r_bt601;
+			*y2r_table = csc_table->y2r_bt601;  /* bt601 full */
 
 		if (input_csc == V4L2_COLORSPACE_BT2020)
 			/*
@@ -1754,12 +1770,10 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 
 	rb_swap = has_rb_swapped(fb->pixel_format);
 	/*
-	 * Px30 treats rgb888 as bgr888
-	 * so we reverse the rb swap to workaround
+	 * VOP full need to do rb swap to show rgb888/bgr888 format color correctly
 	 */
-	if ((fb->pixel_format == DRM_FORMAT_RGB888 ||
-	     fb->pixel_format == DRM_FORMAT_BGR888) &&
-	    (VOP_MAJOR(vop->version) == 2 && VOP_MINOR(vop->version) == 6))
+	if ((fb->pixel_format == DRM_FORMAT_RGB888 || fb->pixel_format == DRM_FORMAT_BGR888) &&
+	    VOP_MAJOR(vop->version) == 3)
 		rb_swap = !rb_swap;
 	VOP_WIN_SET(vop, win, rb_swap, rb_swap);
 
@@ -2622,7 +2636,7 @@ static void vop_update_csc(struct drm_crtc *crtc)
 	/*
 	 * Background color is 10bit depth if vop version >= 3.5
 	 */
-	if (!is_yuv_output(s->bus_format))
+	if (!is_yuv_output(s->bus_format) || !VOP_CTRL_SUPPORT(vop, overlay_mode))
 		val = 0;
 	else if (VOP_MAJOR(vop->version) == 3 && VOP_MINOR(vop->version) == 8 &&
 		 s->hdr.pre_overlay)
@@ -2725,6 +2739,10 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	 */
 	if (vop->lut_active)
 		vop_crtc_load_lut(crtc);
+
+	if (vop->mcu_timing.mcu_pix_total)
+		vop_mcu_mode(crtc);
+
 	dclk_inv = (adjusted_mode->flags & DRM_MODE_FLAG_PPIXDATA) ? 0 : 1;
 
 	VOP_CTRL_SET(vop, dclk_pol, dclk_inv);
@@ -2858,9 +2876,8 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 
 	clk_set_rate(vop->dclk, adjusted_mode->crtc_clock * 1000);
 
-	if (vop->mcu_timing.mcu_pix_total)
-		vop_mcu_mode(crtc);
-
+	if (!VOP_CTRL_SUPPORT(vop, overlay_mode))
+		vop_tv_config_update(crtc, &s->base);
 	vop_cfg_done(vop);
 
 	enable_irq(vop->irq);

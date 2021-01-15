@@ -148,7 +148,6 @@
 		clocks = <&cru ACLK_RGA>, <&cru HCLK_RGA>, <&cru SCLK_RGA_CORE>;
 		clock-names = "aclk_rga", "hclk_rga", "clk_rga";
 		power-domains = <&power RK3399_PD_RGA>;
-		dma-coherent;
 		status = "okay";
 	};
 };
@@ -187,15 +186,6 @@
 			connect = <&vopl_out_edp>;
 		};
 	};
-};
-
-/* HACK: keep MALI version on linux */
-&gpu_power_model {
-	// for DDK r14.
-	voltage = <900>;
-	frequency = <500>;
-	static-power = <300>;
-	dynamic-power = <396>;
 };
 
 &pvtm {

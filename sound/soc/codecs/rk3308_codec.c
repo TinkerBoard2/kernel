@@ -413,7 +413,7 @@ static const struct soc_enum rk3308_agc_asr_enum_array[] = {
 
 static const struct snd_kcontrol_new mic_gains_a[] = {
 	/* ADC MIC */
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Left Gain",
 			   RK3308_ADC_ANA_CON01(0),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -421,7 +421,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_a),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Right Gain",
 			   RK3308_ADC_ANA_CON01(0),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -429,7 +429,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_a),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Left Gain",
 			   RK3308_ADC_ANA_CON01(1),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -437,7 +437,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_a),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Right Gain",
 			   RK3308_ADC_ANA_CON01(1),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -445,7 +445,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_a),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Left Gain",
 			   RK3308_ADC_ANA_CON01(2),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -453,7 +453,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_a),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Right Gain",
 			   RK3308_ADC_ANA_CON01(2),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -461,7 +461,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_a),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Left Gain",
 			   RK3308_ADC_ANA_CON01(3),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -469,7 +469,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_a),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Right Gain",
 			   RK3308_ADC_ANA_CON01(3),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -481,7 +481,7 @@ static const struct snd_kcontrol_new mic_gains_a[] = {
 
 static const struct snd_kcontrol_new mic_gains_b[] = {
 	/* ADC MIC */
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Left Gain",
 			   RK3308_ADC_ANA_CON01(0),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -489,7 +489,7 @@ static const struct snd_kcontrol_new mic_gains_b[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_b),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 0 Right Gain",
 			   RK3308_ADC_ANA_CON01(0),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -497,7 +497,7 @@ static const struct snd_kcontrol_new mic_gains_b[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_b),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Left Gain",
 			   RK3308_ADC_ANA_CON01(1),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -505,7 +505,7 @@ static const struct snd_kcontrol_new mic_gains_b[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_b),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 1 Right Gain",
 			   RK3308_ADC_ANA_CON01(1),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -513,7 +513,7 @@ static const struct snd_kcontrol_new mic_gains_b[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_b),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Left Gain",
 			   RK3308_ADC_ANA_CON01(2),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -521,7 +521,7 @@ static const struct snd_kcontrol_new mic_gains_b[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_b),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 2 Right Gain",
 			   RK3308_ADC_ANA_CON01(2),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -529,7 +529,7 @@ static const struct snd_kcontrol_new mic_gains_b[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_b),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Left Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Left Gain",
 			   RK3308_ADC_ANA_CON01(3),
 			   RK3308_ADC_CH1_MIC_GAIN_SFT,
 			   RK3308_ADC_CH1_MIC_GAIN_MAX,
@@ -537,7 +537,7 @@ static const struct snd_kcontrol_new mic_gains_b[] = {
 			   rk3308_codec_mic_gain_get,
 			   rk3308_codec_mic_gain_put,
 			   rk3308_codec_adc_mic_gain_tlv_b),
-	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Right Volume",
+	SOC_SINGLE_EXT_TLV("ADC MIC Group 3 Right Gain",
 			   RK3308_ADC_ANA_CON01(3),
 			   RK3308_ADC_CH2_MIC_GAIN_SFT,
 			   RK3308_ADC_CH2_MIC_GAIN_MAX,
@@ -1413,11 +1413,11 @@ static int rk3308_codec_reset(struct snd_soc_codec *codec)
 	struct rk3308_codec_priv *rk3308 = snd_soc_codec_get_drvdata(codec);
 
 	reset_control_assert(rk3308->reset);
-	usleep_range(2000, 2500);	/* estimated value */
+	usleep_range(10000, 11000);     /* estimated value */
 	reset_control_deassert(rk3308->reset);
 
 	regmap_write(rk3308->regmap, RK3308_GLB_CON, 0x00);
-	usleep_range(200, 300);		/* estimated value */
+	usleep_range(10000, 11000);     /* estimated value */
 	regmap_write(rk3308->regmap, RK3308_GLB_CON,
 		     RK3308_SYS_WORK |
 		     RK3308_DAC_DIG_WORK |
@@ -1444,7 +1444,7 @@ static int rk3308_codec_dac_dig_reset(struct rk3308_codec_priv *rk3308)
 	regmap_update_bits(rk3308->regmap, RK3308_GLB_CON,
 			   RK3308_DAC_DIG_WORK,
 			   RK3308_DAC_DIG_RESET);
-	udelay(50);
+	usleep_range(10000, 11000);
 	regmap_update_bits(rk3308->regmap, RK3308_GLB_CON,
 			   RK3308_DAC_DIG_WORK,
 			   RK3308_DAC_DIG_WORK);
@@ -1855,15 +1855,6 @@ static int rk3308_codec_digital_fadeout(struct rk3308_codec_priv *rk3308)
 
 static int rk3308_codec_dac_lineout_enable(struct rk3308_codec_priv *rk3308)
 {
-	if (rk3308->codec_ver == ACODEC_VERSION_B) {
-		/* Step 04 */
-		regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON15,
-				   RK3308_DAC_LINEOUT_POP_SOUND_L_MSK |
-				   RK3308_DAC_LINEOUT_POP_SOUND_R_MSK,
-				   RK3308_DAC_L_SEL_DC_FROM_INTERNAL |
-				   RK3308_DAC_R_SEL_DC_FROM_INTERNAL);
-	}
-
 	/* Step 07 */
 	regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON04,
 			   RK3308_DAC_L_LINEOUT_EN |
@@ -1872,17 +1863,6 @@ static int rk3308_codec_dac_lineout_enable(struct rk3308_codec_priv *rk3308)
 			   RK3308_DAC_R_LINEOUT_EN);
 
 	udelay(20);
-
-	if (rk3308->codec_ver == ACODEC_VERSION_B) {
-		/* Step 10 */
-		regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON15,
-				   RK3308_DAC_LINEOUT_POP_SOUND_L_MSK |
-				   RK3308_DAC_LINEOUT_POP_SOUND_R_MSK,
-				   RK3308_DAC_L_SEL_LINEOUT_FROM_INTERNAL |
-				   RK3308_DAC_R_SEL_LINEOUT_FROM_INTERNAL);
-
-		udelay(20);
-	}
 
 	/* Step 19 */
 	regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON04,
@@ -1916,13 +1896,6 @@ static int rk3308_codec_dac_lineout_disable(struct rk3308_codec_priv *rk3308)
 
 static int rk3308_codec_dac_hpout_enable(struct rk3308_codec_priv *rk3308)
 {
-	/* Step 03 */
-	regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON01,
-			   RK3308_DAC_HPOUT_POP_SOUND_L_MSK |
-			   RK3308_DAC_HPOUT_POP_SOUND_R_MSK,
-			   RK3308_DAC_HPOUT_POP_SOUND_L_WORK |
-			   RK3308_DAC_HPOUT_POP_SOUND_R_WORK);
-
 	udelay(20);
 
 	/* Step 07 */
@@ -1957,13 +1930,6 @@ static int rk3308_codec_dac_hpout_enable(struct rk3308_codec_priv *rk3308)
 
 static int rk3308_codec_dac_hpout_disable(struct rk3308_codec_priv *rk3308)
 {
-	/* Step 03 */
-	regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON01,
-			   RK3308_DAC_HPOUT_POP_SOUND_L_MSK |
-			   RK3308_DAC_HPOUT_POP_SOUND_R_MSK,
-			   RK3308_DAC_HPOUT_POP_SOUND_L_INIT |
-			   RK3308_DAC_HPOUT_POP_SOUND_R_INIT);
-
 	/* Step 07 */
 	regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON03,
 			   RK3308_DAC_L_HPOUT_EN |
@@ -2099,17 +2065,14 @@ static int rk3308_codec_dac_enable(struct rk3308_codec_priv *rk3308)
 	/* Waiting the stable reference voltage */
 	mdelay(1);
 
-	if (rk3308->dac_output == DAC_HPOUT ||
-	    rk3308->dac_output == DAC_LINEOUT_HPOUT) {
-		/* Step 03 */
-		regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON01,
-				   RK3308_DAC_HPOUT_POP_SOUND_L_MSK |
-				   RK3308_DAC_HPOUT_POP_SOUND_R_MSK,
-				   RK3308_DAC_HPOUT_POP_SOUND_L_WORK |
-				   RK3308_DAC_HPOUT_POP_SOUND_R_WORK);
+	/* Step 03 */
+	regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON01,
+			   RK3308_DAC_HPOUT_POP_SOUND_L_MSK |
+			   RK3308_DAC_HPOUT_POP_SOUND_R_MSK,
+			   RK3308_DAC_HPOUT_POP_SOUND_L_WORK |
+			   RK3308_DAC_HPOUT_POP_SOUND_R_WORK);
 
-		udelay(20);
-	}
+	udelay(20);
 
 	if (rk3308->codec_ver == ACODEC_VERSION_B &&
 	    (rk3308->dac_output == DAC_LINEOUT ||
@@ -5109,7 +5072,7 @@ static int rk3308_platform_probe(struct platform_device *pdev)
 
 	rk3308->adc_grp0_using_linein = ADC_GRP0_MICIN;
 	rk3308->dac_output = DAC_LINEOUT;
-	rk3308->adc_zerocross = 1;
+	rk3308->adc_zerocross = 0;
 	rk3308->pm_state = PM_NORMAL;
 
 	platform_set_drvdata(pdev, rk3308);

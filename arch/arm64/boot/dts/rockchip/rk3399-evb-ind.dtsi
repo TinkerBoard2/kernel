@@ -35,7 +35,7 @@
 			"Headphone Jack", "HPOL",
 			"Headphone Jack", "HPOR";
 		simple-audio-card,cpu {
-			sound-dai = <&i2s0>;
+			sound-dai = <&i2s1>;
 		};
 		simple-audio-card,codec {
 			sound-dai = <&rk809_codec>;
@@ -132,8 +132,8 @@
 		pinctrl-1 = <&uart0_gpios>;
 		//BT,power_gpio  = <&gpio3 19 GPIO_ACTIVE_HIGH>; /* GPIOx_xx */
 		BT,reset_gpio    = <&gpio0 9 GPIO_ACTIVE_HIGH>; /* GPIO0_B1 */
-		BT,wake_gpio     = <&gpio2 26 GPIO_ACTIVE_HIGH>; /* GPIO2_D2 */
-		BT,wake_host_irq = <&gpio0 4 GPIO_ACTIVE_HIGH>; /* GPIO0_A4 */
+		BT,wake_gpio     = <&gpio0 4 GPIO_ACTIVE_HIGH>; /* GPIO0_A4 */
+		BT,wake_host_irq = <&gpio2 27 GPIO_ACTIVE_HIGH>; /* GPIO2_D3 */
 		status = "okay";
 	};
 
@@ -175,13 +175,14 @@
 	vcc5v0_usbnet: vcc5v0-usbnet {
 		compatible = "regulator-fixed";
 		enable-active-high;
+		/*disabled r8152 usb net default*/
+		//regulator-always-on;
+		//regulator-boot-on;
 		gpio = <&gpio4 18 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&usbnet_pwr_drv>;
 		regulator-name = "vcc5v0_usbnet";
 		startup-delay-us = <20000>;
-		regulator-always-off;
-		regulator-boot-on;
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 		status = "okay";
@@ -206,16 +207,12 @@
 	};
 
 	vdd_log: vdd-log {
-		compatible = "pwm-regulator";
+		compatible = "regulator-fixed";
 		regulator-name = "vdd_log";
-		regulator-min-microvolt = <800000>;
-		regulator-max-microvolt = <1400000>;
+		regulator-min-microvolt = <950000>;
+		regulator-max-microvolt = <950000>;
 		regulator-always-on;
 		regulator-boot-on;
-
-		/* for rockchip boot on */
-		rockchip,pwm_id= <2>;
-		rockchip,pwm_voltage = <900000>;
 	};
 };
 
@@ -1248,7 +1245,7 @@
 		i2s1_2ch_bus: i2s1-2ch-bus {
 			rockchip,pins =
 				<4 3 RK_FUNC_1 &pcfg_pull_none>,
-				<4 4 RK_FUNC_1 &pcfg_pull_none>,
+				<4 5 RK_FUNC_1 &pcfg_pull_none>,
 				<4 6 RK_FUNC_1 &pcfg_pull_none>,
 				<4 7 RK_FUNC_1 &pcfg_pull_none>;
 		};

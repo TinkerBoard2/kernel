@@ -454,6 +454,9 @@ static int cdn_dp_connector_mode_valid(struct drm_connector *connector,
 		break;
 	}
 
+	if (!IS_ALIGNED(mode->hdisplay * bpc * 3, 32))
+		return MODE_H_ILLEGAL;
+
 	requested = mode->clock * bpc * 3 / 1000;
 
 	source_max = dp->lanes;
@@ -726,7 +729,7 @@ static int cdn_dp_enable(struct cdn_dp_device *dp)
 	}
 
 	/* Enable hdcp if it's desired */
-	if (dp->connector.state->content_protection ==
+	if (dp->connector.state && dp->connector.state->content_protection ==
 	    DRM_MODE_CONTENT_PROTECTION_DESIRED)
 		ret = cdn_dp_start_hdcp1x_auth(dp);
 

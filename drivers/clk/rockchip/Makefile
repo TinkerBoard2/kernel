@@ -12,6 +12,7 @@ obj-y	+= clk-muxgrf.o
 obj-y	+= clk-ddr.o
 obj-y	+= clk-half-divider.o
 obj-y	+= clk-pvtm.o
+obj-y	+= clk-dclk-divider.o
 obj-$(CONFIG_RESET_CONTROLLER)	+= softrst.o
 
 obj-$(CONFIG_CPU_PX30)		+= clk-px30.o
@@ -27,4 +28,5 @@ obj-$(CONFIG_CPU_RK3328)	+= clk-rk3328.o
 obj-$(CONFIG_CPU_RK3366)	+= clk-rk3366.o
 obj-$(CONFIG_CPU_RK3368)	+= clk-rk3368.o
 obj-$(CONFIG_CPU_RK3399)	+= clk-rk3399.o
-obj-$(CONFIG_MFD_RK618) += rk618/
+
+obj-$(CONFIG_COMMON_CLK_ROCKCHIP_REGMAP)	+= regmap/
