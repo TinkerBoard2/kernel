@@ -412,7 +412,7 @@
 
 	dsi_edp_bridge: sn65dsi86@2d {
 		compatible = "asus,sn65dsi86";
-		status = "disable";
+		status = "disabled";
 		reg = <0x2d>;
 
 		backlight = <&backlight>;
@@ -443,12 +443,13 @@
 		dsi-lanes = <4>;
 
 		pinctrl-names = "default";
-		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_sn65dsi84_irq>;//<&pinctrl_lvds_bl_en>;
+		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_sn65dsi84_irq>, <&pinctrl_pwr_source>;//<&pinctrl_lvds_bl_en>;
 
 		EN-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
 		edp_vdd_en-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
 		//dsi86_vbl_en-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
 		dsi86_irq-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+		pwr_source-gpios = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
 
 		display-timings {
 			edp {
@@ -506,12 +507,13 @@
 		dsi-lanes = <4>;
 
 		pinctrl-names = "default";
-		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_sn65dsi84_irq>;//<&pinctrl_lvds_hdmi_sel>
+		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_sn65dsi84_irq>, <&pinctrl_pwr_source>;//<&pinctrl_lvds_hdmi_sel>
 
 		/*lvds_hdmi_sel-gpios = <&5 23 GPIO_ACTIVE_HIGH>;*/
 		EN-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
 		lvds_vdd_en-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
 		dsi84_irq-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+		pwr_source-gpios = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
 
 		display-timings {
 			lvds {
@@ -783,6 +785,10 @@
 
 		pinctrl_lvds_vdd_en: lvds_vdd_en {
 			rockchip,pins = <1 RK_PB1 RK_FUNC_GPIO  &pcfg_pull_none>;
+		};
+
+		pinctrl_pwr_source: pwr_source {
+			rockchip,pins = <0 RK_PA6 RK_FUNC_GPIO  &pcfg_pull_none>;
 		};
 	 };
 };

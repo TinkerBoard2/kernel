@@ -175,6 +175,23 @@ bool sn65dsi86_is_connected(void)
 }
 EXPORT_SYMBOL_GPL(sn65dsi86_is_connected);
 
+static void ConvertBoard_power_on(struct sn65dsi86_data *sn65dsi86)
+{
+	printk(KERN_INFO "%s \n", __func__);
+	if (sn65dsi86->pwr_source_gpio) {
+		gpiod_set_value_cansleep(sn65dsi86->pwr_source_gpio, 1);
+		msleep(20);
+	}
+}
+
+static void ConvertBoard_power_off(struct sn65dsi86_data *sn65dsi86)
+{
+	printk(KERN_INFO "%s \n", __func__);
+	if (sn65dsi86->pwr_source_gpio) {
+		gpiod_set_value_cansleep(sn65dsi86->pwr_source_gpio, 0);
+	}
+}
+
 static void edp_power_on(struct sn65dsi86_data *sn65dsi86)
 {
 	printk(KERN_INFO "%s \n", __func__);
@@ -1869,18 +1886,18 @@ static int sn65dsi86_parse_dt(struct device_node *np,
 
 	data->sn65dsi86_en_gpio = devm_gpiod_get_optional(dev, "EN",  GPIOD_OUT_LOW);
 	if (IS_ERR(data->sn65dsi86_en_gpio)) {
-		printk(KERN_INFO "sn65dsi86_parse_dt :failed to get EN GPIO \n");
+		printk(KERN_INFO "sn65dsi86_parse_dt: failed to get EN GPIO \n");
 	}
 
 	data->edp_vdd_en_gpio = devm_gpiod_get_optional(dev, "edp_vdd_en", GPIOD_OUT_LOW);
 	if (IS_ERR(data->edp_vdd_en_gpio)) {
-		printk(KERN_INFO "sn65dsi86_parse_dt :data->edp_vdd_en_gpio\n");
+		printk(KERN_INFO "sn65dsi86_parse_dt: failed to get edp_vdd_en_gpio\n");
 	}
 
 #ifdef PWM_FROM_SN65DSI86
 	data->dsi86_vbl_en_gpio = devm_gpiod_get_optional(dev, "dsi86_vbl_en", GPIOD_OUT_LOW);
 	if (IS_ERR(data->dsi86_vbl_en_gpio)) {
-		printk(KERN_INFO "sn65dsi86_parse_dt :data->dsi86_vbl_en_gpio\n");
+		printk(KERN_INFO "sn65dsi86_parse_dt: failed to get dsi86_vbl_en_gpio\n");
 	}
 #endif
 
@@ -1888,7 +1905,12 @@ static int sn65dsi86_parse_dt(struct device_node *np,
 	//printk(KERN_INFO "sn65dsi86_parse_dt  dsi86_irq_gpio=%u\n", data->dsi86_irq_gpio);
 	data->dsi86_irq_gpio = devm_gpiod_get_optional(dev, "dsi86_irq", GPIOD_IN);
 	if (IS_ERR(data->dsi86_irq_gpio)) {
-		printk(KERN_INFO "sn65dsi86_parse_dt :data->dsi86_irq_gpio\n");
+		printk(KERN_INFO "sn65dsi86_parse_dt: failed to get dsi86_irq_gpio\n");
+	}
+
+	data->pwr_source_gpio = devm_gpiod_get_optional(dev, "pwr_source", GPIOD_OUT_LOW);
+	if (IS_ERR(data->pwr_source_gpio)) {
+		printk(KERN_INFO "sn65dsi86_parse_dt: failed to get pwr_source gpio\n");
 	}
 
 #ifndef PWM_FROM_SN65DSI86
@@ -2093,6 +2115,7 @@ static int sn65dsi86_probe(struct i2c_client *client,
 
 	dev_set_drvdata(&client->dev, sn65dsi86);
 
+	ConvertBoard_power_on(sn65dsi86);
 	sn65dsi86_chip_shutdown(sn65dsi86);
 	sn65dsi86_chip_enable(sn65dsi86);
 	sn65dsi86_detect(sn65dsi86);
@@ -2195,9 +2218,11 @@ static int sn65dsi86_remove(struct i2c_client *client)
 
 static void  sn65dsi86_shutdown(struct i2c_client *i2c)
 {
-	//struct sn65dsi86_data *sn65dsi86 = i2c_get_clientdata(i2c);
+	struct sn65dsi86_data *sn65dsi86 = i2c_get_clientdata(i2c);
 
-	//sn65dsi86_bridge_disable(&sn65dsi86->bridge);
+	sn65dsi86_bridge_disable(&sn65dsi86->bridge);
+
+	ConvertBoard_power_off(sn65dsi86);
 
 	return;
 }

@@ -37,6 +37,7 @@ struct sn65dsi86_data {
 	struct gpio_desc *edp_vdd_en_gpio;
 	struct gpio_desc *sn65dsi86_en_gpio;
 	struct gpio_desc *dsi86_vbl_en_gpio;
+	struct gpio_desc *pwr_source_gpio;
 
 	enum drm_connector_status status;
 	struct drm_connector connector;

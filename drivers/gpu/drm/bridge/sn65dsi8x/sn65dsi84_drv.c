@@ -94,6 +94,23 @@ bool sn65dsi84_is_connected(void)
 }
 EXPORT_SYMBOL_GPL(sn65dsi84_is_connected);
 
+static void ConvertBoard_power_on(struct sn65dsi84_data *sn65dsi84)
+{
+	printk(KERN_INFO "%s \n", __func__);
+	if (sn65dsi84->pwr_source_gpio) {
+		gpiod_set_value_cansleep(sn65dsi84->pwr_source_gpio, 1);
+		msleep(20);
+	}
+}
+
+static void ConvertBoard_power_off(struct sn65dsi84_data *sn65dsi84)
+{
+	printk(KERN_INFO "%s \n", __func__);
+	if (sn65dsi84->pwr_source_gpio) {
+		gpiod_set_value_cansleep(sn65dsi84->pwr_source_gpio, 0);
+	}
+}
+
 static void lvds_power_on(struct sn65dsi84_data *sn65dsi84)
 {
 	printk(KERN_INFO "%s \n", __func__);
@@ -908,26 +925,30 @@ static int sn65dsi84_parse_dt(struct device_node *np,
 
 	data->sn65dsi84_en_gpio = devm_gpiod_get_optional(dev, "EN",  GPIOD_OUT_LOW);
 	if (IS_ERR(data->sn65dsi84_en_gpio)) {
-		printk(KERN_INFO "sn65dsi84_parse_dt :failed to get EN GPIO \n");
+		printk(KERN_INFO "sn65dsi84_parse_dt: failed to get EN GPIO \n");
 	}
 
 	data->lvds_vdd_en_gpio = devm_gpiod_get_optional(dev, "lvds_vdd_en", GPIOD_OUT_LOW);
 	if (IS_ERR(data->lvds_vdd_en_gpio)) {
-		printk(KERN_INFO "sn65dsi84_parse_dt :data->lvds_vdd_en_gpio\n");
+		printk(KERN_INFO "sn65dsi84_parse_dt: failed to get lvds_vdd_en_gpio\n");
 	}
 
 	data->lvds_hdmi_sel_gpio = devm_gpiod_get_optional(dev, "lvds_hdmi_sel", GPIOD_IN);
 	if (IS_ERR(data->lvds_hdmi_sel_gpio)) {
-		printk(KERN_INFO "sn65dsi84_parse_dt :data->lvds_hdmi_sel_gpio\n");
+		printk(KERN_INFO "sn65dsi84_parse_dt: failed to get lvds_hdmi_sel_gpio\n");
 	}
 
 	//data->dsi84_irq_gpio = of_get_named_gpio_flags(np, "dsi84_irq", 0, (enum of_gpio_flags *)&irq_flags);
 	//printk(KERN_INFO "sn65dsi84_parse_dt  dsi84_irq_gpio=%u\n", data->dsi84_irq_gpio);
 	data->dsi84_irq_gpio = devm_gpiod_get_optional(dev, "dsi84_irq", GPIOD_IN);
 	if (IS_ERR(data->dsi84_irq_gpio)) {
-		printk(KERN_INFO "sn65dsi84_parse_dt :data->dsi84_irq_gpio\n");
+		printk(KERN_INFO "sn65dsi84_parse_dt: failed to get dsi84_irq_gpio\n");
 	}
 
+	data->pwr_source_gpio = devm_gpiod_get_optional(dev, "pwr_source", GPIOD_OUT_LOW);
+	if (IS_ERR(data->pwr_source_gpio)) {
+		printk(KERN_INFO "sn65dsi84_parse_dt: failed to get  pwr_source gpio\n");
+	}
 
 	backlight = of_parse_phandle(dev->of_node, "backlight", 0);
 	if (backlight) {
@@ -1182,6 +1203,7 @@ static int sn65dsi84_probe(struct i2c_client *i2c, const struct i2c_device_id *i
 		//switch_to_lvds = !!gpiod_get_value(sn65dsi84->lvds_hdmi_sel_gpio);
 	}
 
+	ConvertBoard_power_on(sn65dsi84);
 	lvds_power_off(sn65dsi84);
 	//msleep(1000); //t15
 
@@ -1260,6 +1282,8 @@ static void  sn65dsi84_shutdown(struct i2c_client *i2c)
 	printk("sn65dsi84_shutdown\n");
 
 	sn65dsi84_bridge_disable(&sn65dsi84->bridge);
+
+	ConvertBoard_power_off(sn65dsi84);
 
 	return;
 }

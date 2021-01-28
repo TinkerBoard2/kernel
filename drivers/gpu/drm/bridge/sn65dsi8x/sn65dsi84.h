@@ -45,6 +45,7 @@ struct sn65dsi84_data {
 	struct gpio_desc *lvds_vdd_en_gpio;
 	struct gpio_desc *sn65dsi84_en_gpio;
 	struct gpio_desc *lvds_hdmi_sel_gpio;
+	struct gpio_desc *pwr_source_gpio;
 
 	struct workqueue_struct *wq;
 	struct work_struct work;
