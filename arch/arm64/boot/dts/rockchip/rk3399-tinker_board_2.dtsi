@@ -824,8 +824,8 @@
 	 * also list here for more convenient configuration:
 	 * pmu1830-supply: RK3399_PMU1830_VDD_1V8 or RK3399_PMU1830_VDD_3V0
 	 */
-	uboot-set = <RK3399_PMU1830_VDD_3V0>;
-	pmu1830-supply = <&vcc_3v0>;
+	uboot-set = <RK3399_PMU1830_VDD_1V8>;
+	pmu1830-supply = <&vcc_1v5>;
 };
 
 &pwm0 {
