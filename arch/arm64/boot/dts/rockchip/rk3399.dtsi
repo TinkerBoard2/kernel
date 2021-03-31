@@ -2601,6 +2601,14 @@
 		};
 
 		sdio0 {
+			sdio0_bus4: sdio0-bus4 {
+				rockchip,pins =
+					<2 20 RK_FUNC_1 &pcfg_pull_up>,
+					<2 21 RK_FUNC_1 &pcfg_pull_up>,
+					<2 22 RK_FUNC_1 &pcfg_pull_up>,
+					<2 23 RK_FUNC_1 &pcfg_pull_up>;
+			};
+
 			sdio0_cmd: sdio0-cmd {
 				rockchip,pins =
 					<2 24 RK_FUNC_1 &pcfg_pull_up>;
