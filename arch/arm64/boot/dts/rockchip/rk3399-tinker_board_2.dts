@@ -46,7 +46,7 @@
 #include <dt-bindings/input/input.h>
 
 / {
-	model = "ASUS Tinker Board 2 (Linux Opensource)";
+	model = "Tinker Board 2";
 	compatible = "rockchip,rk3399-tinker_board_2", "rockchip,rk3399";
 
 	vcc_lcd: vcc-lcd {
