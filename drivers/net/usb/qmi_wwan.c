@@ -114,6 +114,25 @@ fix_dest:
 	return 1;
 }
 
+struct sk_buff *qmi_wwan_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t flags)
+{
+	if (dev->udev->descriptor.idVendor != cpu_to_le16(0x2C7C))
+		return skb;
+	// Skip Ethernet header from message
+	if (dev->net->hard_header_len == 0)
+		return skb;
+	else
+		skb_reset_mac_header(skb);
+	if (skb_pull(skb, ETH_HLEN)) {
+		return skb;
+	} else {
+		dev_err(&dev->intf->dev, "Packet Dropped ");
+	}
+	// Filter the packet out, release it
+	dev_kfree_skb_any(skb);
+	return NULL;
+}
+
 /* very simplistic detection of IPv4 or IPv6 headers */
 static bool possibly_iphdr(const char *data)
 {
@@ -294,6 +313,23 @@ static int qmi_wwan_bind(struct usbnet *dev, struct usb_interface *intf)
 		dev->net->dev_addr[0] &= 0xbf;	/* clear "IP" bit */
 	}
 	dev->net->netdev_ops = &qmi_wwan_netdev_ops;
+
+	if (dev->udev->descriptor.idVendor == cpu_to_le16(0x2C7C)) {
+		if (intf->cur_altsetting->desc.bInterfaceClass != 0xff) {
+			dev_info(&intf->dev, "Quectel module not qmi_wwan mode! please check 'at+qcfg=\"usbnet\"'\n");
+			return -ENODEV;
+		}
+		dev_info(&intf->dev, "Quectel EC25&EC21&EG91&EG95&EG06&EP06&EM06&EG12&EP12&EM12&EG16&EG18&BG96&AG35 work on RawIP mode\n");
+		dev->net->flags |= IFF_NOARP;
+		usb_control_msg(
+			interface_to_usbdev(intf),
+			usb_sndctrlpipe(interface_to_usbdev(intf), 0),
+			0x22, //USB_CDC_REQ_SET_CONTROL_LINE_STATE
+			0x21, //USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE
+			1, //active CDC DTR
+			intf->cur_altsetting->desc.bInterfaceNumber,
+			NULL, 0, 100);
+	}
 err:
 	return status;
 }
@@ -379,6 +415,7 @@ static const struct driver_info	qmi_wwan_info = {
 	.unbind		= qmi_wwan_unbind,
 	.manage_power	= qmi_wwan_manage_power,
 	.rx_fixup       = qmi_wwan_rx_fixup,
+	.tx_fixup 		= qmi_wwan_tx_fixup,
 };
 
 #define HUAWEI_VENDOR_ID	0x12D1
@@ -772,6 +809,14 @@ static const struct usb_device_id products[] = {
 	{QMI_FIXED_INTF(0x03f0, 0x9d1d, 1)},	/* HP lt4120 Snapdragon X5 LTE */
 	{QMI_FIXED_INTF(0x22de, 0x9061, 3)},	/* WeTelecom WPD-600N */
 	{QMI_FIXED_INTF(0x1e0e, 0x9001, 5)},	/* SIMCom 7230E */
+	{QMI_FIXED_INTF(0x2C7C, 0x0125, 4)}, 	/* Quectel EC25 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0121, 4)}, 	/* Quectel EC21 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0191, 4)}, 	/* Quectel EG91 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0195, 4)}, 	/* Quectel EG95 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0306, 4)}, 	/* Quectel EG06/EP06/EM06 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0512, 4)}, 	/* Quectel EG12/EP12/EM12/EG16/EG18 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0296, 4)}, 	/* Quectel BG96 */
+	{QMI_FIXED_INTF(0x2C7C, 0x0435, 4)}, 	/* Quectel AG35 */
 
 	/* 4. Gobi 1000 devices */
 	{QMI_GOBI1K_DEVICE(0x05c6, 0x9212)},	/* Acer Gobi Modem Device */

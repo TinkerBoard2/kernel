@@ -249,6 +249,16 @@ static void option_instat_callback(struct urb *urb);
 #define QUECTEL_PRODUCT_EC25			0x0125
 #define QUECTEL_PRODUCT_BG96			0x0296
 #define QUECTEL_PRODUCT_EP06			0x0306
+#define QUECTEL_PRODUCT_EG91            0x0191
+#define QUECTEL_PRODUCT_EG95            0x0195
+#define QUECTEL_PRODUCT_EG12            0x0512
+#define QUECTEL_PRODUCT_BG95            0x0700
+#define QUECTEL_PRODUCT_AG35            0x0435
+#define QUECTEL_PRODUCT_AG15            0x0415
+#define QUECTEL_PRODUCT_AG520R          0x0452
+#define QUECTEL_PRODUCT_AG550R          0x0455
+#define QUECTEL_PRODUCT_EG20            0x0620
+#define QUECTEL_PRODUCT_RG500Q          0x0800
 
 #define CMOTECH_VENDOR_ID			0x16d8
 #define CMOTECH_PRODUCT_6001			0x6001
@@ -1093,6 +1103,16 @@ static const struct usb_device_id option_ids[] = {
 	  .driver_info = RSVD(4) },
 	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EP06),
 	  .driver_info = RSVD(4) | RSVD(5) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EG91) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EG95) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EG12) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_BG95) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_AG35) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_AG15) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_AG520R) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_AG550R) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EG20) },
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_RG500Q) },
 	{ USB_DEVICE(CMOTECH_VENDOR_ID, CMOTECH_PRODUCT_6001) },
 	{ USB_DEVICE(CMOTECH_VENDOR_ID, CMOTECH_PRODUCT_CMU_300) },
 	{ USB_DEVICE(CMOTECH_VENDOR_ID, CMOTECH_PRODUCT_6003),
@@ -2017,6 +2037,7 @@ static struct usb_serial_driver option_1port_device = {
 #ifdef CONFIG_PM
 	.suspend           = usb_wwan_suspend,
 	.resume            = usb_wwan_resume,
+	.reset_resume      = usb_wwan_resume,
 #endif
 };
 
@@ -2058,6 +2079,17 @@ static int option_probe(struct usb_serial *serial,
 	    dev_desc->idProduct == cpu_to_le16(0x4e3c) &&
 	    iface_desc->bInterfaceNumber <= 1)
 		return -ENODEV;
+
+	if (dev_desc->idVendor == cpu_to_le16(QUECTEL_VENDOR_ID)) {
+		//some interfaces can be used as USB Network device (ecm, rndis, mbim)
+		if (iface_desc->bInterfaceClass != 0xFF) {
+			return -ENODEV;
+		}
+		//interface 4 can be used as USB Network device (qmi)
+		else if (iface_desc->bInterfaceNumber >= 4) {
+			return -ENODEV;
+		}
+	}
 
 	/* Store the device flags so we can use them during attach. */
 	usb_set_serial_data(serial, (void *)device_flags);
