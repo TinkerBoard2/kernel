@@ -2179,6 +2179,8 @@ static int rk3399_usb2phy_tuning(struct rockchip_usb2phy *rphy)
 				    GENMASK(17, 16) | 0x0);
 		ret |= regmap_write(rphy->grf, 0x44b4,
 				    GENMASK(17, 16) | 0x0);
+		ret |= regmap_write(rphy->grf, 0x449C,
+				    0x78006000);
 	} else {
 		/*
 		 * Disable the pre-emphasize in eop state
