@@ -289,11 +289,11 @@
 };
 
 &route_edp {
-	status = "okay";
+	status = "disabled";
 };
 
 &edp {
-	status = "okay";
+	status = "disabled";
 	force-hpd;
 
 	ports {
