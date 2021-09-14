@@ -485,7 +485,7 @@
 		compatible = "rockchip,rk808";
 		reg = <0x1b>;
 		interrupt-parent = <&gpio1>;
-		interrupts = <21 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <18 IRQ_TYPE_LEVEL_LOW>;
 		#clock-cells = <1>;
 		clock-output-names = "xin32k", "rk808-clkout2";
 		pinctrl-names = "default";
@@ -556,8 +556,8 @@
 				regulator-name = "vcc1v8_dvp";
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
@@ -567,8 +567,8 @@
 				regulator-name = "vcc3v0_tp";
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <3000000>;
-				regulator-max-microvolt = <3000000>;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
@@ -602,8 +602,8 @@
 				regulator-name = "vcca3v0_codec";
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <3000000>;
-				regulator-max-microvolt = <3000000>;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
@@ -625,8 +625,8 @@
 				regulator-name = "vcca1v8_codec";
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
@@ -731,7 +731,7 @@
 	status = "okay";
 
 	bt656-supply = <&vcc_3v0>;
-	audio-supply = <&vcca1v8_codec>;
+	audio-supply = <&vcc_3v0>;
 	sdmmc-supply = <&vcc_sdio>;
 	gpio1830-supply = <&vcc_3v0>;
 };
@@ -1216,7 +1216,8 @@
 	pmic {
 		pmic_int_l: pmic-int-l {
 			rockchip,pins =
-				<1 RK_PC5 RK_FUNC_GPIO &pcfg_pull_up>;
+				<1 18 RK_FUNC_GPIO &pcfg_pull_up>,
+				<0 9 RK_FUNC_GPIO &pcfg_pull_none>; /* GPIO0_B1 */
 		};
 
 		pmic_dvs2: pmic-dvs2 {
