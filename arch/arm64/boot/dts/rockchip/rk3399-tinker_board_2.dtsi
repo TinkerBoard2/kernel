@@ -684,6 +684,12 @@
 			regulator-off-in-suspend;
 		};
 	};
+};
+
+&i2c4 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <475>;
+	i2c-scl-falling-time-ns = <26>;
 
 	vdd_gpu: fan53200@60 {
 		compatible = "fcs,fan53200";
@@ -705,12 +711,6 @@
 			regulator-off-in-suspend;
 		};
 	};
-};
-
-&i2c4 {
-	status = "okay";
-	i2c-scl-rising-time-ns = <475>;
-	i2c-scl-falling-time-ns = <26>;
 
 	fusb0: fusb30x@22 {
 		compatible = "fairchild,fusb302";
