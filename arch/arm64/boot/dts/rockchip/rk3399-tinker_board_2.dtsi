@@ -448,8 +448,9 @@
 
 &gmac {
 	assigned-clocks = <&cru SCLK_RMII_SRC>;
-	assigned-clock-parents = <&clkin_gmac>;
-	clock_in_out = "input";
+	assigned-clock-parents = <&cru SCLK_MAC>;
+	assigned-clock-rates = <125000000>;
+	clock_in_out = "output";
 	phy-supply = <&vcc_lan>;
 	phy-mode = "rgmii";
 	pinctrl-names = "default";
