@@ -994,6 +994,14 @@
 	};
 };
 
+&i2c8 {
+	status = "okay";
+	m24c08@50 {
+		compatible = "at,24c08";
+		reg = <0x50>;
+	};
+};
+
 &pcie0 {
 	ep-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>;
 	num-lanes = <4>;
