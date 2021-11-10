@@ -692,6 +692,7 @@
 	status = "okay";
 	i2c-scl-rising-time-ns = <475>;
 	i2c-scl-falling-time-ns = <26>;
+	clock-frequency = <400000>;
 
 	vdd_gpu: fan53200@60 {
 		compatible = "fcs,fan53200";
