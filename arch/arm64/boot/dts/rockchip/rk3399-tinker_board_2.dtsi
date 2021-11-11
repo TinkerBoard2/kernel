@@ -336,9 +336,7 @@
 	vcc3v0_sd: vcc3v0-sd {
 		compatible = "regulator-fixed";
 		enable-active-high;
-		gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&sdmmc0_pwr_h>;
 		regulator-always-on;
 		regulator-max-microvolt = <3000000>;
 		regulator-min-microvolt = <3000000>;
@@ -1164,13 +1162,6 @@
 
 		vsel2_gpio: vsel2-gpio {
 			rockchip,pins = <1 RK_PB6 RK_FUNC_GPIO &pcfg_pull_down>;
-		};
-	};
-
-	sd {
-		sdmmc0_pwr_h: sdmmc0-pwr-h {
-			rockchip,pins =
-				<0 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
