@@ -327,38 +327,6 @@
 &i2c1 {
 	status = "okay";
 
-	gsl3673: gsl3673@40 {
-		compatible = "GSL,GSL3673";
-		reg = <0x40>;
-		screen_max_x = <1536>;
-		screen_max_y = <2048>;
-		irq_gpio_number = <&gpio1 20 IRQ_TYPE_LEVEL_LOW>;
-		rst_gpio_number = <&gpio4 22 GPIO_ACTIVE_HIGH>;
-	};
-
-	tc358749x: tc358749x@f {
-		compatible = "toshiba,tc358749";
-		reg = <0xf>;
-		clocks = <&ext_cam_clk>;
-		clock-names = "refclk";
-		reset-gpios = <&gpio2 7 GPIO_ACTIVE_LOW>;
-		interrupt-parent = <&gpio2>;
-		interrupts = <12 IRQ_TYPE_LEVEL_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&hdmiin_gpios>;
-		status = "disabled";
-		port {
-			hdmiin_out0: endpoint {
-				/* Unlinked mipi dphy rx0 */
-				//remote-endpoint = <&mipi_in_ucam0>;
-				data-lanes = <1 2 3 4>;
-				clock-noncontinuous;
-				link-frequencies =
-					/bits/ 64 <297000000>;
-			};
-		};
-	};
-
 	vm149c: vm149c@0c {
 		compatible = "silicon touch,vm149c";
 		status = "okay";
