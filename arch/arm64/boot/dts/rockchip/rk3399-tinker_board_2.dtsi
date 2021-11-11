@@ -956,45 +956,6 @@
 	};
 };
 
-&i2c4 {
-	status = "okay";
-	i2c-scl-rising-time-ns = <600>;
-	i2c-scl-falling-time-ns = <20>;
-
-	mpu6500@68 {
-		status = "disabled";
-		compatible = "invensense,mpu6500";
-		reg = <0x68>;
-		irq-gpio = <&gpio1 22 IRQ_TYPE_EDGE_RISING>;
-		mpu-int_config = <0x10>;
-		mpu-level_shifter = <0>;
-		mpu-orientation = <0 1 0 1 0 0 0 0 1>;
-		orientation-x= <1>;
-		orientation-y= <0>;
-		orientation-z= <0>;
-		mpu-debug = <1>;
-	};
-
-	mpu6500_acc: mpu_acc@68 {
-		compatible = "mpu6500_acc";
-		reg = <0x68>;
-		irq-gpio = <&gpio1 22 IRQ_TYPE_EDGE_RISING>;
-		irq_enable = <0>;
-		poll_delay_ms = <30>;
-		type = <SENSOR_TYPE_ACCEL>;
-		layout = <2>;
-	};
-
-	mpu6500_gyro: mpu_gyro@68 {
-		compatible = "mpu6500_gyro";
-		reg = <0x68>;
-		irq_enable = <0>;
-		poll_delay_ms = <30>;
-		type = <SENSOR_TYPE_GYROSCOPE>;
-		layout = <2>;
-	};
-};
-
 &i2c8 {
 	status = "okay";
 	m24c08@50 {
