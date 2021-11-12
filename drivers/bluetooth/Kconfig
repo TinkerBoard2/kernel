@@ -63,6 +63,12 @@ config BT_HCIBTUSB_RTL
 
 	  Say Y here to compile support for Realtek protocol.
 
+config BT_RTKBTUSB
+	tristate "Realtek HCI USB driver"
+	depends on USB
+	help
+	  Realtek HCI USB driver.
+
 config BT_HCIBTSDIO
 	tristate "HCI SDIO driver"
 	depends on MMC
