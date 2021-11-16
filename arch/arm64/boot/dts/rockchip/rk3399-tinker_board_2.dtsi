@@ -722,7 +722,7 @@
 };
 
 &pwm0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &pwm2 {
@@ -816,6 +816,10 @@
 	status = "okay";
 };
 
+&uart4 {
+	status = "disabled";
+};
+
 &usb_host0_ehci {
 	status = "okay";
 };
@@ -901,7 +905,7 @@
 };
 
 &spdif {
-	status = "okay";
+	status = "disabled";
 	pinctrl-0 = <&spdif_bus>;
 	i2c-scl-rising-time-ns = <450>;
 	i2c-scl-falling-time-ns = <15>;
@@ -909,7 +913,7 @@
 };
 
 &i2s0 {
-	status = "okay";
+	status = "disabled";
 	rockchip,playback-channels = <8>;
 	rockchip,capture-channels = <8>;
 	#sound-dai-cells = <0>;
@@ -933,7 +937,7 @@
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_xfer &uart0_cts>;
-	status = "okay";
+	status = "disabled";
 };
 
 &saradc {

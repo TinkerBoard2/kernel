@@ -44,6 +44,12 @@
 		serial4 = &uart4;
 		dsi0 = &dsi;
 		dsi1 = &dsi1;
+		spi0 = &spi0;
+		spi1 = &spi1;
+		spi2 = &spi2;
+		spi3 = &spi3;
+		spi4 = &spi4;
+		spi5 = &spi5;
 	};
 
 	cpus {
