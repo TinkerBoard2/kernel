@@ -1000,6 +1000,7 @@ struct dwc3 {
 	unsigned		tx_de_emphasis:2;
 	unsigned		needs_fifo_resize:1;
 	unsigned		fifo_resize_status:1;
+	struct gpio_desc        *gpio_hub_vbus;
 };
 
 /* -------------------------------------------------------------------------- */
