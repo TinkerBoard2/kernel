@@ -23,9 +23,9 @@ static int ver_show(struct seq_file *m, void *v)
 	if (hwid == 0)
 		boardver = "1.01";	//Due to SR using ADC, HWID0 mapping to ER.
 	else if (hwid == 1)
-		boardver = "1.02";	//Mapping to PR.
-	else if (hwid == 2)
-		boardver = "1.03";	//Mapping to MP.
+		boardver = "1.02";	//Mapping to PR and MP.
+	else if (hwid == 3)
+		boardver = "1.03";
 	else
 		boardver = "unknown";
 
