@@ -24,6 +24,7 @@ EXTRA_CFLAGS += -I$(src)/include
 
 EXTRA_LDFLAGS += --strip-debug
 
+EXTRA_CFLAGS += -Wno-bool-operation
 CONFIG_AUTOCFG_CP = n
 
 ########################## WIFI IC ############################
