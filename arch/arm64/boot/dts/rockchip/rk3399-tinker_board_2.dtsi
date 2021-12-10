@@ -910,7 +910,7 @@
 	status = "okay";
 
 	u2phy1_otg: otg-port {
-		status = "disabled";
+		status = "okay";
 	};
 
 	u2phy1_host: host-port {
