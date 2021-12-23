@@ -20,6 +20,9 @@ obj-$(CONFIG_RAPIDIO)		+= rapidio/
 obj-y				+= video/
 obj-y				+= idle/
 
+# boardinfo must come after gpio
+obj-$(CONFIG_BOARDINFO)         += boardinfo/
+
 # IPMI must come before ACPI in order to provide IPMI opregion support
 obj-$(CONFIG_IPMI_HANDLER)	+= char/ipmi/
 
@@ -183,4 +186,3 @@ obj-$(CONFIG_TEE)		+= tee/
 obj-$(CONFIG_RK_NAND)		+= rk_nand/
 obj-$(CONFIG_RK_HEADSET)	+= headset_observe/
 obj-$(CONFIG_RK_FLASH)		+= rkflash/
-obj-$(CONFIG_BOARDINFO)		+= boardinfo/
