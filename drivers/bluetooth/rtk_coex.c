@@ -1,3 +1,23 @@
+/*
+*
+*  Realtek Bluetooth USB driver
+*
+*
+*  This program is free software; you can redistribute it and/or modify
+*  it under the terms of the GNU General Public License as published by
+*  the Free Software Foundation; either version 2 of the License, or
+*  (at your option) any later version.
+*
+*  This program is distributed in the hope that it will be useful,
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*  GNU General Public License for more details.
+*
+*  You should have received a copy of the GNU General Public License
+*  along with this program; if not, write to the Free Software
+*  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*
+*/
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -1866,7 +1886,7 @@ static void rtk_handle_connection_complete_evt(u8 * p)
 	}
 }
 
-static void rtk_handle_le_connection_complete_evt(u8 * p)
+static void rtk_handle_le_connection_complete_evt(u8 enhanced, u8 * p)
 {
 	u16 handle, interval;
 	u8 status;
@@ -1874,7 +1894,10 @@ static void rtk_handle_le_connection_complete_evt(u8 * p)
 
 	status = *p++;
 	STREAM_TO_UINT16(handle, p);
-	p += 8;			//role, address type, address
+	if (!enhanced)
+		p += 8;	/* role, address type, address */
+	else
+		p += (8 + 12); /* plus two bluetooth addresses */
 	STREAM_TO_UINT16(interval, p);
 
 	RTKBT_INFO("LE connected, handle %04x, status 0x%02x, interval %u",
@@ -1945,7 +1968,10 @@ static void rtk_handle_le_meta_evt(u8 * p)
 	u8 sub_event = *p++;
 	switch (sub_event) {
 	case HCI_EV_LE_CONN_COMPLETE:
-		rtk_handle_le_connection_complete_evt(p);
+		rtk_handle_le_connection_complete_evt(0, p);
+		break;
+	case HCI_EV_LE_ENHANCED_CONN_COMPLETE:
+		rtk_handle_le_connection_complete_evt(1, p);
 		break;
 
 	case HCI_EV_LE_CONN_UPDATE_COMPLETE:
@@ -2011,8 +2037,7 @@ static void disconn_acl(u16 handle, struct rtl_hci_conn *conn)
 
 	list_for_each_safe(iter, temp, &coex->profile_list) {
 		prof_info = list_entry(iter, rtk_prof_info, list);
-		if (handle == prof_info->handle && prof_info->scid
-		    && prof_info->dcid) {
+		if (handle == prof_info->handle) {
 			RTKBT_DBG("hci disconn, hndl %x, psm %x, dcid %x, "
 				  "scid %x, profile %u", prof_info->handle,
 				  prof_info->psm, prof_info->dcid,
@@ -2348,9 +2373,9 @@ static void rtl_ev_work(struct work_struct *work)
 	spin_unlock_irqrestore(&coex->buff_lock, flags);
 }
 
-int ev_filter_out(u8 ev_code)
+int ev_filter_out(u8 *buf)
 {
-	switch (ev_code) {
+	switch (buf[0]) {
 	case HCI_EV_INQUIRY_COMPLETE:
 	case HCI_EV_PIN_CODE_REQ:
 	case HCI_EV_IO_CAPA_REQUEST:
@@ -2362,9 +2387,19 @@ int ev_filter_out(u8 ev_code)
 	case HCI_EV_CONN_COMPLETE:
 	case HCI_EV_SYNC_CONN_COMPLETE:
 	case HCI_EV_DISCONN_COMPLETE:
-	case HCI_EV_LE_META:
 	case HCI_EV_VENDOR_SPECIFIC:
 		return 0;
+	case HCI_EV_LE_META:
+		/* Ignore frequent but not useful events that result in
+		 * costing too much space.
+		 */
+		switch (buf[2]) {
+		case HCI_EV_LE_CONN_COMPLETE:
+		case HCI_EV_LE_ENHANCED_CONN_COMPLETE:
+		case HCI_EV_LE_CONN_UPDATE_COMPLETE:
+			return 0;
+		}
+		return 1;
 	default:
 		return 1;
 	}
@@ -2374,7 +2409,7 @@ static void rtk_btcoex_evt_enqueue(__u8 *s, __u16 count)
 {
 	struct rtl_hci_ev *ev;
 
-	if (ev_filter_out(s[0]))
+	if (ev_filter_out(s))
 		return;
 
 	ev = rtl_ev_node_get(&btrtl_coex);

@@ -1,3 +1,23 @@
+/*
+*
+*  Realtek Bluetooth USB driver
+*
+*
+*  This program is free software; you can redistribute it and/or modify
+*  it under the terms of the GNU General Public License as published by
+*  the Free Software Foundation; either version 2 of the License, or
+*  (at your option) any later version.
+*
+*  This program is distributed in the hope that it will be useful,
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*  GNU General Public License for more details.
+*
+*  You should have received a copy of the GNU General Public License
+*  along with this program; if not, write to the Free Software
+*  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*
+*/
 #include <net/bluetooth/hci_core.h>
 #include <linux/list.h>
 
@@ -27,6 +47,7 @@
 #define HCI_EV_LE_META			                        0x3e
 #define HCI_EV_LE_CONN_COMPLETE		                    0x01
 #define HCI_EV_LE_CONN_UPDATE_COMPLETE	                0x03
+#define HCI_EV_LE_ENHANCED_CONN_COMPLETE    0x0a
 
 //vendor cmd to fw
 #define HCI_VENDOR_ENABLE_PROFILE_REPORT_COMMAND        0xfc18

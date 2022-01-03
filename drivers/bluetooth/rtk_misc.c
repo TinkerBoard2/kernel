@@ -59,17 +59,13 @@
 
 #include "rtk_misc.h"
 
-#ifndef USE_CONTROLLER_BDADDR
 #include <linux/file.h>
 #include <linux/ctype.h>
 #define BDADDR_STRING_LEN	17
 #define BDADDR_FILE		"/opt/bdaddr"
-static bool customer_bdaddr = false;
-#endif
 
 struct cfg_list_item {
 	struct list_head list;
-	u8 *cfg_data;
 	u16 offset;
 	u8 len;
 	u8 data[0];
@@ -84,8 +80,6 @@ static struct list_head list_extracfgs;
 #define PKT_LEN			    300
 #define MSG_TO			    1000	//us
 #define PATCH_SEG_MAX	    252
-/* #define PATCH_LENGTH_MAX    24576 */ //24*1024
-#define PATCH_LENGTH_MAX	(40 * 1024)
 #define DATA_END		    0x80
 #define DOWNLOAD_OPCODE	    0xfc20
 /* This command is used only for TV patch
@@ -110,6 +104,7 @@ static struct list_head list_extracfgs;
 #define ROM_LMP_8821a               0X8821
 #define ROM_LMP_8761a               0X8761
 #define ROM_LMP_8822b               0X8822
+#define ROM_LMP_8852a               0x8852
 
 struct rtk_eversion_evt {
 	uint8_t status;
@@ -157,6 +152,12 @@ uint16_t project_id[] = {
 	ROM_LMP_NONE,
 	ROM_LMP_8822b, /* RTL8822CU */
 	ROM_LMP_8761a, /* index 14 for 8761BU */
+	ROM_LMP_NONE,
+	ROM_LMP_NONE,
+	ROM_LMP_NONE,
+	ROM_LMP_8852a, /* index 18 for 8852AU */
+	ROM_LMP_8723b, /* index 19 for 8723FU */
+	ROM_LMP_8852a, /* index 20 for 8852BU */
 };
 
 enum rtk_endpoit {
@@ -173,6 +174,9 @@ enum rtk_endpoit {
 #define RTL8821CU	0x72
 #define RTL8822CU	0x73
 #define RTL8761BU	0x74
+#define RTL8852AU	0x75
+#define RTL8723FU	0x76
+#define RTL8852BU	0x77
 
 typedef struct {
 	uint16_t prod_id;
@@ -180,11 +184,6 @@ typedef struct {
 	char *	 mp_patch_name;
 	char *	 patch_name;
 	char *	 config_name;
-
-	/* TODO: Remove the following avariables */
-	uint8_t *fw_cache1;
-	int	 fw_len1;
-
 	u8       chip_type;
 } patch_info;
 
@@ -219,6 +218,7 @@ typedef struct {
 } __attribute__ ((packed)) download_rp;
 
 #define RTK_VENDOR_CONFIG_MAGIC 0x8723ab55
+const u8 cfg_magic[4] = { 0x55, 0xab, 0x23, 0x87 };
 struct rtk_bt_vendor_config_entry {
 	uint16_t offset;
 	uint8_t entry_len;
@@ -245,71 +245,150 @@ static int rcv_hci_evt(xchange_data * xdata);
 static uint8_t rtk_get_eversion(dev_data * dev_entry);
 
 static patch_info fw_patch_table[] = {
-/* { pid, lmp_sub, mp_fw_name, fw_name, config_name, fw_cache, fw_len } */
-	{0x1724, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* RTL8723A */
-	{0x8723, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AE */
-	{0xA723, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AE for LI */
-	{0x0723, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AE */
-	{0x3394, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AE for Azurewave */
+/* { pid, lmp_sub, mp_fw_name, fw_name, config_name, chip_type } */
+	{0x1724, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* RTL8723A */
+	{0x8723, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AE */
+	{0xA723, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AE for LI */
+	{0x0723, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AE */
+	{0x3394, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AE for Azurewave */
 
-	{0x0724, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AU */
-	{0x8725, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AU */
-	{0x872A, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AU */
-	{0x872B, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", NULL, 0},	/* 8723AU */
+	{0x0724, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AU */
+	{0x8725, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AU */
+	{0x872A, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AU */
+	{0x872B, 0x1200, "mp_rtl8723a_fw", "rtl8723a_fw", "rtl8723a_config", RTLPREVIOUS},	/* 8723AU */
 
-	{0xb720, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723bu_config", NULL, 0},	/* RTL8723BU */
-	{0xb72A, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723bu_config", NULL, 0},	/* RTL8723BU */
-	{0xb728, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for LC */
-	{0xb723, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE */
-	{0xb72B, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE */
-	{0xb001, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for HP */
-	{0xb002, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE */
-	{0xb003, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE */
-	{0xb004, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE */
-	{0xb005, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE */
+	{0xb720, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BU */
+	{0xb72A, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BU */
+	{0xb728, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for LC */
+	{0xb723, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE */
+	{0xb72B, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE */
+	{0xb001, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for HP */
+	{0xb002, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE */
+	{0xb003, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE */
+	{0xb004, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE */
+	{0xb005, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE */
 
-	{0x3410, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for Azurewave */
-	{0x3416, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for Azurewave */
-	{0x3459, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for Azurewave */
-	{0xE085, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for Foxconn */
-	{0xE08B, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for Foxconn */
-	{0xE09E, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", NULL, 0},	/* RTL8723BE for Foxconn */
+	{0x3410, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for Azurewave */
+	{0x3416, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for Azurewave */
+	{0x3459, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for Azurewave */
+	{0xE085, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for Foxconn */
+	{0xE08B, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for Foxconn */
+	{0xE09E, 0x8723, "mp_rtl8723b_fw", "rtl8723b_fw", "rtl8723b_config", RTLPREVIOUS},	/* RTL8723BE for Foxconn */
 
-	{0xA761, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", NULL, 0},	/* RTL8761AU only */
-	{0x818B, 0x8761, "mp_rtl8761a_fw", "rtl8761aw_fw", "rtl8761aw_config", NULL, 0},	/* RTL8761AW + 8192EU */
-	{0x818C, 0x8761, "mp_rtl8761a_fw", "rtl8761aw_fw", "rtl8761aw_config", NULL, 0},	/* RTL8761AW + 8192EU */
-	{0x8760, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", NULL, 0},	/* RTL8761AU + 8192EE */
-	{0xB761, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", NULL, 0},	/* RTL8761AU + 8192EE */
-	{0x8761, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", NULL, 0},	/* RTL8761AU + 8192EE for LI */
-	{0x8A60, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", NULL, 0},	/* RTL8761AU + 8812AE */
-	{0x3527, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", NULL, 0},	/* RTL8761AU + 8814AE */
+	{0xA761, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", RTLPREVIOUS},	/* RTL8761AU only */
+	{0x818B, 0x8761, "mp_rtl8761a_fw", "rtl8761aw_fw", "rtl8761aw_config", RTLPREVIOUS},	/* RTL8761AW + 8192EU */
+	{0x818C, 0x8761, "mp_rtl8761a_fw", "rtl8761aw_fw", "rtl8761aw_config", RTLPREVIOUS},	/* RTL8761AW + 8192EU */
+	{0x8760, 0x8761, "mp_rtl8761a_fw", "rtl8761au8192ee_fw", "rtl8761a_config", RTLPREVIOUS},	/* RTL8761AU + 8192EE */
+	{0xB761, 0x8761, "mp_rtl8761a_fw", "rtl8761au_fw", "rtl8761a_config", RTLPREVIOUS},	/* RTL8761AUV only */
+	{0x8761, 0x8761, "mp_rtl8761a_fw", "rtl8761au8192ee_fw", "rtl8761a_config", RTLPREVIOUS},	/* RTL8761AU + 8192EE for LI */
+	{0x8A60, 0x8761, "mp_rtl8761a_fw", "rtl8761au8812ae_fw", "rtl8761a_config", RTLPREVIOUS},	/* RTL8761AU + 8812AE */
+	{0x3527, 0x8761, "mp_rtl8761a_fw", "rtl8761au8192ee_fw", "rtl8761a_config", RTLPREVIOUS},	/* RTL8761AU + 8814AE */
 
-	{0x8821, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", NULL, 0},	/* RTL8821AE */
-	{0x0821, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", NULL, 0},	/* RTL8821AE */
-	{0x0823, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", NULL, 0},	/* RTL8821AU */
-	{0x3414, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", NULL, 0},	/* RTL8821AE */
-	{0x3458, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", NULL, 0},	/* RTL8821AE */
-	{0x3461, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", NULL, 0},	/* RTL8821AE */
-	{0x3462, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", NULL, 0},	/* RTL8821AE */
+	{0x8821, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", RTLPREVIOUS},	/* RTL8821AE */
+	{0x0821, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", RTLPREVIOUS},	/* RTL8821AE */
+	{0x0823, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", RTLPREVIOUS},	/* RTL8821AU */
+	{0x3414, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", RTLPREVIOUS},	/* RTL8821AE */
+	{0x3458, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", RTLPREVIOUS},	/* RTL8821AE */
+	{0x3461, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", RTLPREVIOUS},	/* RTL8821AE */
+	{0x3462, 0x8821, "mp_rtl8821a_fw", "rtl8821a_fw", "rtl8821a_config", RTLPREVIOUS},	/* RTL8821AE */
 
-	{0xb82c, 0x8822, "mp_rtl8822bu_fw", "rtl8822bu_fw", "rtl8822bu_config", NULL, 0}, /* RTL8822BU */
-	{0xb00b, 0x8822, "mp_rtl8822bu_fw", "rtl8822bu_fw", "rtl8822bu_config", NULL, 0}, /* RTL8822BE */
-	{0x185c, 0x8822, "mp_rtl8822bu_fw", "rtl8822bu_fw", "rtl8822bu_config", NULL, 0}, /* RTL8822BE for ASUS */
-	{0xd723, 0x8723, "mp_rtl8723du_fw", "rtl8723du_fw", "rtl8723du_config", NULL, 0}, /* RTL8723DU */
-	{0xb820, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", NULL, 0 }, /* RTL8821CU */
-	{0xc820, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", NULL, 0 }, /* RTL8821CU */
+	{0xb82c, 0x8822, "mp_rtl8822bu_fw", "rtl8822bu_fw", "rtl8822bu_config", RTL8822BU}, /* RTL8822BU */
 
-	{0xc82c, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", NULL, 0 }, /* RTL8822CU */
-	{0xc822, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", NULL, 0 }, /* RTL8822CE */
-	{0xb00c, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", NULL, 0 }, /* RTL8822CE */
-	{0xc123, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", NULL, 0 }, /* RTL8822CE */
-	{0x4005, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", NULL, 0 }, /* RTL8822CE for WCBN810L-AD */
-	{0x3548, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", NULL, 0 }, /* RTL8822CE for AW-CB375NF */
-	{0x3549, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", NULL, 0 }, /* RTL8822CE for Azurewave */
-	{0x8771, 0x8761, "mp_rtl8761bu_fw", "rtl8761bu_fw", "rtl8761bu_config", NULL, 0}, /* RTL8761BU only */
+	{0xd720, 0x8723, "mp_rtl8723du_fw", "rtl8723du_fw", "rtl8723du_config", RTL8723DU}, /* RTL8723DU */
+	{0xd723, 0x8723, "mp_rtl8723du_fw", "rtl8723du_fw", "rtl8723du_config", RTL8723DU}, /* RTL8723DU */
+	{0xd739, 0x8723, "mp_rtl8723du_fw", "rtl8723du_fw", "rtl8723du_config", RTL8723DU}, /* RTL8723DU */
+	{0xb009, 0x8723, "mp_rtl8723du_fw", "rtl8723du_fw", "rtl8723du_config", RTL8723DU}, /* RTL8723DU */
+	{0x0231, 0x8723, "mp_rtl8723du_fw", "rtl8723du_fw", "rtl8723du_config", RTL8723DU}, /* RTL8723DU for LiteOn */
+
+	{0xb820, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CU */
+	{0xc820, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CU */
+	{0xc821, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc823, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc824, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc825, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc827, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc025, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc024, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc030, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xb00a, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xb00e, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0xc032, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0x4000, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for LiteOn */
+	{0x4001, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for LiteOn */
+	{0x3529, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for Azurewave */
+	{0x3530, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for Azurewave */
+	{0x3532, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for Azurewave */
+	{0x3533, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for Azurewave */
+	{0x3538, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for Azurewave */
+	{0x3539, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for Azurewave */
+	{0x3540, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE */
+	{0x3541, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for GSD */
+	{0x3543, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CE for GSD */
+	{0xc80c, 0x8821, "mp_rtl8821cu_fw", "rtl8821cu_fw", "rtl8821cu_config", RTL8821CU}, /* RTL8821CUH */
+
+	{0xc82c, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CU */
+	{0xc82e, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CU */
+	{0xc81d, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CU */
+	{0xc822, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc82b, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xb00c, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xb00d, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc123, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc126, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc127, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc128, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc129, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc131, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc136, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0x3549, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE for Azurewave */
+	{0x3548, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE for Azurewave */
+	{0xc125, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0x4005, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE for LiteOn */
+	{0x3051, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE for LiteOn */
+	{0x18ef, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0x161f, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0x3053, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc547, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0x3553, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0x3555, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE */
+	{0xc82f, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE-VS */
+	{0xc02f, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE-VS */
+	{0xc03f, 0x8822, "mp_rtl8822cu_fw", "rtl8822cu_fw", "rtl8822cu_config", RTL8822CU}, /* RTL8822CE-VS */
+
+	{0x8771, 0x8761, "mp_rtl8761b_fw", "rtl8761bu_fw", "rtl8761bu_config", RTL8761BU}, /* RTL8761BU only */
+	{0xa725, 0x8761, "mp_rtl8761b_fw", "rtl8725au_fw", "rtl8725au_config", RTL8761BU}, /* RTL8725AU */
+	{0xa72A, 0x8761, "mp_rtl8761b_fw", "rtl8725au_fw", "rtl8725au_config", RTL8761BU}, /* RTL8725AU BT only */
+
+	{0x885a, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AU */
+	{0x8852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0xa852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x2852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x385a, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x3852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x1852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x4852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x4006, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x3561, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x3562, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x588a, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x589a, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x590a, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0xc125, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0xe852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0xb852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0xc852, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0xc549, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0xc127, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+	{0x3565, 0x8852, "mp_rtl8852au_fw", "rtl8852au_fw", "rtl8852au_config", RTL8852AU}, /* RTL8852AE */
+
+	{0xb733, 0x8723, "mp_rtl8723fu_fw", "rtl8723fu_fw", "rtl8723fu_config", RTL8723FU}, /* RTL8723FU */
+	{0xb73a, 0x8723, "mp_rtl8723fu_fw", "rtl8723fu_fw", "rtl8723fu_config", RTL8723FU}, /* RTL8723FU */
+	{0xf72b, 0x8723, "mp_rtl8723fu_fw", "rtl8723fu_fw", "rtl8723fu_config", RTL8723FU}, /* RTL8723FU */
+
+	{0xb85b, 0x8852, "mp_rtl8852bu_fw", "rtl8852bu_fw", "rtl8852bu_config", RTL8852BU}, /* RTL8852BE */
 
 /* NOTE: must append patch entries above the null entry */
-	{0, 0, NULL, NULL, NULL, NULL, 0}
+	{0, 0, NULL, NULL, NULL, 0}
 };
 
 static LIST_HEAD(dev_data_list);
@@ -339,7 +418,7 @@ void util_hexdump(const u8 *buf, size_t len)
 	}
 }
 
-#ifdef RTKBT_SWITCH_PATCH
+#if defined RTKBT_SWITCH_PATCH || defined RTKBT_TV_POWERON_WHITELIST
 int __rtk_send_hci_cmd(struct usb_device *udev, u8 *buf, u16 size)
 {
 	int result;
@@ -463,7 +542,6 @@ static void line_process(char *buf, int len)
 
 	offset = simple_strtoul(argv[0], NULL, 16);
 	offset = offset | (simple_strtoul(argv[1], NULL, 16) << 8);
-	RTKBT_INFO("extra config offset %04lx", offset);
 	l = (u8)simple_strtoul(argv[2], NULL, 16);
 	if (l != (u8)(argc - 3)) {
 		RTKBT_ERR("invalid len %u", l);
@@ -477,7 +555,6 @@ static void line_process(char *buf, int len)
 		return;
 	}
 
-	item->cfg_data = item->data;
 	item->offset = (u16)offset;
 	item->len = l;
 	for (i = 0; i < l; i++)
@@ -622,12 +699,44 @@ static int send_reset_command(xchange_data *xdata)
 	return 0;
 }
 
+static inline int get_max_patch_size(u8 chip_type)
+{
+	int max_patch_size = 0;
+
+	switch (chip_type) {
+	case RTLPREVIOUS:
+		max_patch_size = 24 * 1024;
+		break;
+	case RTL8822BU:
+		max_patch_size = 25 * 1024;
+		break;
+	case RTL8723DU:
+	case RTL8822CU:
+	case RTL8761BU:
+	case RTL8821CU:
+		max_patch_size = 40 * 1024;
+		break;
+	case RTL8852AU:
+	case RTL8723FU:
+	case RTL8852BU:
+		max_patch_size = 40 * 1024 + 529;
+		break;
+	default:
+		max_patch_size = 40 * 1024;
+		break;
+	}
+
+	return max_patch_size;
+}
+
 int download_patch(struct usb_interface *intf)
 {
 	dev_data *dev_entry;
+	patch_info *pinfo;
 	xchange_data *xdata = NULL;
 	uint8_t *fw_buf;
 	int ret_val;
+	int max_patch_size = 0;
 
 	RTKBT_DBG("download_patch start");
 	dev_entry = dev_data_find(intf);
@@ -670,8 +779,16 @@ int download_patch(struct usb_interface *intf)
 
 	fw_buf = xdata->fw_data;
 
-	if (xdata->fw_len > PATCH_LENGTH_MAX) {
-		RTKBT_ERR("FW/CONFIG total length larger than allowed!");
+	pinfo = dev_entry->patch_entry;
+	if (!pinfo) {
+		RTKBT_ERR("%s: No patch entry", __func__);
+		ret_val = -1;
+		goto patch_fail;
+	}
+	max_patch_size = get_max_patch_size(pinfo->chip_type);
+	if (xdata->fw_len > max_patch_size) {
+		RTKBT_ERR("FW/CONFIG total length larger than allowed %d",
+			  max_patch_size);
 		ret_val = -1;
 		goto patch_fail;
 	}
@@ -769,9 +886,17 @@ int download_lps_patch(struct usb_interface *intf)
 
 	fw_buf = xdata->fw_data;
 
-	if (xdata->fw_len > PATCH_LENGTH_MAX) {
+	pinfo = dev_entry->patch_entry;
+	if (!pinfo) {
+		RTKBT_ERR("%s: No patch entry", __func__);
 		result = -1;
-		RTKBT_ERR("FW/CONFIG total length larger than allowed!");
+		goto patch_fail;
+	}
+	max_patch_size = get_max_patch_size(pinfo->chip_type);
+	if (xdata->fw_len > max_patch_size) {
+		result = -1;
+		RTKBT_ERR("FW/CONFIG total length larger than allowed %d",
+			  max_patch_size);
 		goto patch_fail;
 	}
 
@@ -857,35 +982,7 @@ dev_data *dev_data_find(struct usb_interface * intf)
 			patch_info *patch = dev_entry->patch_entry;
 			if (!patch)
 				return NULL;
-			switch (patch->prod_id){
-			case 0xb82c:
-			case 0xb00b:
-			case 0x185c:
-				patch->chip_type = RTL8822BU;
-				break;
-			case 0xd723:
-				patch->chip_type = RTL8723DU;
-				break;
-			case 0xb820:
-			case 0xc820:
-				patch->chip_type = RTL8821CU;
-				break;
-			case 0xc82c:
-			case 0xc822:
-			case 0xb00c:
-			case 0xc123:
-			case 0x4005:
-			case 0x3548:
-			case 0x3549:
-				patch->chip_type = RTL8822CU;
-				break;
-			case 0x8771:
-				patch->chip_type = RTL8761BU;
-				break;
-			default:
-				patch->chip_type = RTLPREVIOUS;
-				break;
-			}
+
 			RTKBT_INFO("chip type value: 0x%02x", patch->chip_type);
 			return dev_entry;
 		}
@@ -914,7 +1011,7 @@ patch_info *get_patch_entry(struct usb_device * udev)
 	return patch_entry;
 }
 
-static int valid_mac(u8 chip_type, u16 offset)
+static int is_mac(u8 chip_type, u16 offset)
 {
 	int result = 0;
 
@@ -927,6 +1024,9 @@ static int valid_mac(u8 chip_type, u16 offset)
 		break;
 	case RTL8822CU:
 	case RTL8761BU:
+	case RTL8852AU:
+	case RTL8723FU:
+	case RTL8852BU:
 		if (offset == 0x0030)
 			return 1;
 		break;
@@ -939,104 +1039,95 @@ static int valid_mac(u8 chip_type, u16 offset)
 	return result;
 }
 
-static void fill_mac_offset(u8 chip_type, u8 b[2])
+static uint16_t get_mac_offset(u8 chip_type)
 {
 	switch (chip_type) {
 	case RTL8822BU:
 	case RTL8723DU:
 	case RTL8821CU:
-		b[0] = 0x44;
-		b[1] = 0x00;
-		break;
+		return 0x0044;
 	case RTL8822CU:
 	case RTL8761BU:
-		b[0] = 0x30;
-		b[1] = 0x00;
-		break;
+	case RTL8852AU:
+	case RTL8723FU:
+	case RTL8852BU:
+		return 0x0030;
 	case RTLPREVIOUS:
-		b[0] = 0x3c;
-		b[1] = 0x00;
-		break;
+		return 0x003c;
+	default:
+		return 0x003c;
 	}
 }
 
-static void merge_configs(uint8_t *cfg_buf, u16 *plen, int max)
+static void merge_configs(struct list_head *head, struct list_head *head2)
 {
-	struct list_head *iter, *tmp;
-	struct cfg_list_item *item;
-	u8 *buf;
-	u16 tmp_len;
+	struct list_head *epos, *enext;
+	struct list_head *pos, *next;
+	struct cfg_list_item *n;
+	struct cfg_list_item *extra;
 
-	list_for_each_safe(iter, tmp, &list_extracfgs) {
-		struct list_head *iter2, *tmp2;
+	if (!head || !head2)
+		return;
 
-		item = list_entry(iter, struct cfg_list_item, list);
-		list_for_each_safe(iter2, tmp2, &list_configs) {
-			struct cfg_list_item *n;
+	if (list_empty(head2))
+		return;
 
-			n = list_entry(iter2, struct cfg_list_item, list);
-			if (item->offset == n->offset) {
-				if (item->len == n->len) {
-					RTKBT_INFO("Update cfg: %04x, %u",
+	if (list_empty(head)) {
+		list_splice_tail(head2, head);
+		INIT_LIST_HEAD(head2);
+		return;
+	}
+
+	/* Add or update & replace */
+	list_for_each_safe(epos, enext, head2) {
+		extra = list_entry(epos, struct cfg_list_item, list);
+
+		list_for_each_safe(pos, next, head) {
+			n = list_entry(pos, struct cfg_list_item, list);
+			if (extra->offset == n->offset) {
+				if (extra->len < n->len) {
+					/* Update the cfg data */
+					RTKBT_INFO("Update cfg: ofs %04x len %u",
 						   n->offset, n->len);
-					memcpy(n->data, item->data, n->len);
-					if (n->cfg_data)
-						memcpy(n->cfg_data, item->data,
-						       n->len);
-					list_del(&item->list);
-					kfree(item);
-					break;
+					memcpy(n->data, extra->data,
+					       extra->len);
+					list_del(epos);
+					kfree(extra);
+				} else {
+					/* Replace the item */
+					list_del(epos);
+					list_replace_init(pos, epos);
+					/* free the old item */
+					kfree(n);
 				}
-
-				RTKBT_WARN("item mismatch %04x %u %u",
-					   item->offset, item->len, n->len);
-				list_del(&item->list);
-				kfree(item);
 			}
+
 		}
+
 	}
 
-	buf = cfg_buf + *plen;
-	list_for_each_safe(iter, tmp, &list_extracfgs) {
-		item = list_entry(iter, struct cfg_list_item, list);
-		if (item->len + 3 + *plen > max) {
-			RTKBT_WARN("%s: length %u exceeds %d", __func__,
-				   item->len + 3 + *plen, max);
-			goto done;
-		}
-		buf[0] = item->offset & 0xff;
-		buf[1] = (item->offset >> 8) & 0xff;
-		buf[2] = item->len;
-		memcpy(buf + 3, item->data, item->len);
-		buf += (3 + item->len);
-		*plen += (3 + item->len);
-		list_del(&item->list);
-		kfree(item);
+	if (list_empty(head2))
+		return;
+	list_for_each_safe(epos, enext, head2) {
+		extra = list_entry(epos, struct cfg_list_item, list);
+		RTKBT_INFO("Add new cfg: ofs %04x, len %u", extra->offset,
+			   extra->len);
+		/* Add the item to list */
+		list_del(epos);
+		list_add_tail(epos, head);
 	}
-
-done:
-	tmp_len = *plen - 6;
-
-	cfg_buf[4] = (tmp_len & 0xff);
-	cfg_buf[5] = ((tmp_len >> 8) & 0xff);
 }
 
-int rtk_parse_config_file(patch_info *pent, int max, u8 *config_buf,
-			  int filelen, char bt_addr[6])
+int rtk_parse_config_file(u8 *config_buf, int filelen)
 {
 	struct rtk_bt_vendor_config *config = (void *)config_buf;
 	u16 config_len = 0, temp = 0;
 	struct rtk_bt_vendor_config_entry *entry = NULL;
 	u32 i = 0;
-	char str[18];
-#ifndef USE_CONTROLLER_BDADDR
-	int j = 0;
-#endif
 	struct cfg_list_item *item;
-	u32 addr_found = 0;
 
-	if (!config)
-		return 0;
+	if (!config_buf)
+		return -EINVAL;
 
 	config_len = le16_to_cpu(config->data_len);
 	entry = config->entry;
@@ -1044,49 +1135,19 @@ int rtk_parse_config_file(patch_info *pent, int max, u8 *config_buf,
 	if (le32_to_cpu(config->signature) != RTK_VENDOR_CONFIG_MAGIC) {
 		RTKBT_ERR("sig magic num %08x,  not rtk vendor magic %08x",
 			  config->signature, RTK_VENDOR_CONFIG_MAGIC);
-		return 0;
+		return -1;
 	}
 
 	if (config_len != filelen - BT_CONFIG_HDRLEN) {
 		RTKBT_ERR("config length %u is not right %u", config_len,
 			  (u16)(filelen - BT_CONFIG_HDRLEN));
-		return 0;
+		return -1;
 	}
 
 	for (i = 0; i < config_len;) {
-		RTKBT_DBG("config offset %04x,length %02x", entry->offset,
-			  entry->entry_len);
-		switch (le16_to_cpu(entry->offset)) {
-		case 0x003c:
-		case 0x0044:
-		case 0x0030:
-#ifndef USE_CONTROLLER_BDADDR
-			if (!customer_bdaddr)
-				break;
-			if (!valid_mac(pent->chip_type, le16_to_cpu(entry->offset)))
-				break;
-			for (j = 0; j < entry->entry_len && j < 6; j++)
-				entry->entry_data[j] = bt_addr[j];
-#endif
-			addr_found = 1;
-			snprintf(str, sizeof(str),
-				 "%2.2X:%2.2X:%2.2X:%2.2X:%2.2X:%2.2X",
-				 entry->entry_data[5],
-				 entry->entry_data[4],
-				 entry->entry_data[3],
-				 entry->entry_data[2],
-				 entry->entry_data[1],
-				 entry->entry_data[0]);
-			RTKBT_DBG("bdaddr sec found, set bdaddr %s", str);
-			break;
-		default:
-			break;
-		}
-
 		/* Add config item to list */
 		item = kzalloc(sizeof(*item) + entry->entry_len, GFP_KERNEL);
 		if (item) {
-			item->cfg_data = entry->entry_data;
 			item->offset = le16_to_cpu(entry->offset);
 			item->len = entry->entry_len;
 			memcpy(item->data, entry->entry_data, item->len);
@@ -1094,6 +1155,7 @@ int rtk_parse_config_file(patch_info *pent, int max, u8 *config_buf,
 		} else {
 			RTKBT_ERR("Cannot alloc mem for entry %04x, %u",
 				  entry->offset, entry->entry_len);
+			break;
 		}
 
 		temp = entry->entry_len +
@@ -1104,47 +1166,7 @@ int rtk_parse_config_file(patch_info *pent, int max, u8 *config_buf,
 							  temp);
 	}
 
-#ifndef USE_CONTROLLER_BDADDR
-	if (!addr_found && customer_bdaddr) {
-		u8 *b;
-		u16 ofs;
-
-		if (config_len + BT_CONFIG_HDRLEN + 9 > max) {
-			RTKBT_ERR("%s: length exceeds", __func__);
-		}
-
-		b = config_buf + config_len + BT_CONFIG_HDRLEN;
-		fill_mac_offset(pent->chip_type, b);
-		ofs = (((u16)b[1] << 8) | b[0]);
-		RTKBT_INFO("add bdaddr sec, offset %02x%02x", b[1], b[0]);
-		b[2] = 6;
-		for (j = 0; j < 6; j++)
-			b[3 + j] = bt_addr[j];
-
-		config_len += 9;
-
-		config_buf[4] = config_len & 0xff;
-		config_buf[5] = (config_len >> 8) & 0xff;
-
-		/* Add address item to list */
-		item = kzalloc(sizeof(*item) + 6, GFP_KERNEL);
-		if (item) {
-			item->cfg_data = b + 3;
-			item->offset = ofs;
-			item->len = b[2];
-			memcpy(item->data, b + 3, 6);
-			list_add_tail(&item->list, &list_configs);
-		} else {
-			RTKBT_ERR("Cannot alloc mem for entry %04x, %u",
-				  entry->offset, entry->entry_len);
-		}
-	}
-#endif
-
-	temp = config_len + BT_CONFIG_HDRLEN;
-	merge_configs(config_buf, &temp, max);
-
-	return temp;;
+	return 0;;
 }
 
 uint8_t rtk_get_fw_project_id(uint8_t * p_buf)
@@ -1231,7 +1253,6 @@ static void rtk_get_patch_entry(uint8_t * epatch_buf,
 		  tmp, (coex_ver & 0xffff));
 }
 
-#ifndef USE_CONTROLLER_BDADDR
 int bachk(const char *str)
 {
 	if (!str)
@@ -1314,89 +1335,135 @@ static int request_bdaddr(u8 *buf)
 fail:
 	return rc;
 }
-#endif
 
-static int load_config(dev_data *dev_entry, u8 **buf, int *length)
+static u8 *load_config(dev_data *dev_entry, int *length)
 {
 	patch_info *patch_entry;
 	const char *config_name;
 	const struct firmware *fw;
 	struct usb_device *udev;
 	int result;
-	u8 *tbuf;
-	int len;
+	u8 *buf;
+	u8 *p;
+	u16 config_len;
+	u16 dlen;
 	u8 tmp_buf[32];
 	int file_sz;
-	int retry = 15;
+	struct cfg_list_item *n;
+	struct list_head *pos, *next;
+	u8 chip_type;
 
 	config_lists_init();
 	patch_entry = dev_entry->patch_entry;
 	config_name = patch_entry->config_name;
 	udev = dev_entry->udev;
+	chip_type = patch_entry->chip_type;
 
 	RTKBT_INFO("config filename %s", config_name);
-	while (retry-- > 0) {
-		result = request_firmware(&fw, config_name, &udev->dev);
-		if (result < 0) {
-			RTKBT_INFO("request_firmware failed, add 1s delay and retry again");
-			msleep(1000);
-		} else
-			break;
-	}
+	result = request_firmware(&fw, config_name, &udev->dev);
 	if (result < 0)
 		return 0;
 
 	file_sz = fw->size;
-	len = fw->size;
-#ifndef USE_CONTROLLER_BDADDR
-	len += 9;
-#endif
+	buf = (u8 *)fw->data;
 
+	/* Load extra configs */
 	config_file_proc(EXTRA_CONFIG_FILE);
-	if (!list_empty(&list_extracfgs)) {
-		struct cfg_list_item *item;
-		struct list_head *tmp, *iter;
-
-		list_for_each_safe(iter, tmp, &list_extracfgs) {
-			item = list_entry(iter, struct cfg_list_item, list);
-			len += (item->len + 3);
-		}
+	list_for_each_safe(pos, next, &list_extracfgs) {
+		n = list_entry(pos, struct cfg_list_item, list);
+		RTKBT_INFO("extra cfg: ofs %04x, len %u", n->offset, n->len);
 	}
 
-	tbuf = kzalloc(len, GFP_KERNEL);
-	if (!tbuf)
-		goto err1;
-	memcpy(tbuf, fw->data, fw->size);
-
-#ifndef USE_CONTROLLER_BDADDR
+	/* Load extra bdaddr config */
 	memset(tmp_buf, 0, sizeof(tmp_buf));
 	result = request_bdaddr(tmp_buf);
-	if (result < 0) {
+	if (result > 0) {
+		n = kzalloc(sizeof(*n) + 6, GFP_KERNEL);
+		if (n) {
+			n->offset = get_mac_offset(patch_entry->chip_type);
+			n->len = 6;
+			memcpy(n->data, tmp_buf, 6);
+			list_add_tail(&n->list, &list_extracfgs);
+		} else {
+			RTKBT_WARN("Couldn't alloc mem for bdaddr");
+		}
+	} else {
 		if (result == -ENOENT)
 			RTKBT_WARN("no bdaddr file %s", BDADDR_FILE);
 		else
 			RTKBT_WARN("invalid customer bdaddr %d", result);
 	}
-	customer_bdaddr = (result < 0) ? false : true;
-#endif
-	len = rtk_parse_config_file(patch_entry, len, tbuf, file_sz, tmp_buf);
+
+	RTKBT_INFO("Origin cfg len %u", (u16)file_sz);
+	util_hexdump((const u8 *)buf, file_sz);
+
+	result = rtk_parse_config_file(buf, file_sz);
+	if (result < 0) {
+		RTKBT_ERR("Parse config file error");
+		buf = NULL;
+		goto done;
+	}
+
+	merge_configs(&list_configs, &list_extracfgs);
+
+	/* Calculate the config_len */
+	config_len = 4; /* magic word length */
+	config_len += 2; /* data length field */
+	dlen = 0;
+	list_for_each_safe(pos, next, &list_configs) {
+		n = list_entry(pos, struct cfg_list_item, list);
+		switch (n->offset) {
+		case 0x003c:
+		case 0x0030:
+		case 0x0044:
+			if (is_mac(chip_type, n->offset) && n->len == 6) {
+				char s[18];
+				sprintf(s, "%2.2X:%2.2X:%2.2X:%2.2X:%2.2X:%2.2X",
+					n->data[5], n->data[4],
+					n->data[3], n->data[2],
+					n->data[1], n->data[0]);
+				RTKBT_INFO("bdaddr ofs %04x, %s", n->offset, s);
+			}
+			break;
+		default:
+			break;
+		}
+
+		config_len += (3 + n->len);
+		dlen += (3 + n->len);
+	}
+
+
+	buf = kzalloc(config_len, GFP_KERNEL);
+	if (!buf) {
+		RTKBT_ERR("Couldn't alloc buf for configs");
+		goto done;
+	}
+
+	/* Save configs to a buffer */
+	memcpy(buf, cfg_magic, 4);
+	buf[4] = dlen & 0xff;
+	buf[5] = (dlen >> 8) & 0xff;
+	p = buf + 6;
+	list_for_each_safe(pos, next, &list_configs) {
+		n = list_entry(pos, struct cfg_list_item, list);
+		p[0] = n->offset & 0xff;
+		p[1] = (n->offset >> 8) & 0xff;
+		p[2] = n->len;
+		memcpy(p + 3, n->data, n->len);
+		p += (3 + n->len);
+	}
+
+	RTKBT_INFO("New cfg len %u", config_len);
+	util_hexdump((const u8 *)buf, config_len);
+
+	*length = config_len;
+
+done:
 	config_lists_free();
-
-	*buf = tbuf;
-	*length = len;
-
-	util_hexdump(*buf, *length);
-
 	release_firmware(fw);
 
-	RTKBT_INFO("Config file length %d, new length %d", file_sz, len);
-
-	return 0;
-err1:
-	config_lists_free();
-	release_firmware(fw);
-	return -1;
-
+	return buf;
 }
 
 int load_firmware(dev_data * dev_entry, uint8_t ** buff)
@@ -1418,7 +1485,7 @@ int load_firmware(dev_data * dev_entry, uint8_t ** buff)
 	lmp_version = patch_entry->lmp_sub;
 	RTKBT_DBG("lmp_version = 0x%04x", lmp_version);
 
-	load_config(dev_entry, &config_file_buf, &config_len);
+	config_file_buf = load_config(dev_entry, &config_len);
 
 	fw_name = patch_entry->patch_name;
 	RTKBT_ERR("fw name is  %s", fw_name);
@@ -1429,6 +1496,7 @@ int load_firmware(dev_data * dev_entry, uint8_t ** buff)
 		config_file_buf = NULL;
 		goto fw_fail;
 	}
+
 	epatch_buf = kzalloc(fw->size, GFP_KERNEL);
 	if (NULL == epatch_buf)
 		goto alloc_fail;

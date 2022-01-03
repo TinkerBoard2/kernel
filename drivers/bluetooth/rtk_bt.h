@@ -135,6 +135,10 @@ struct btusb_data {
 	__u8 cmdreq_type;
 
 	unsigned int sco_num;
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+	unsigned int air_mode;
+#endif
 	int isoc_altsetting;
 	int suspend_count;
 
