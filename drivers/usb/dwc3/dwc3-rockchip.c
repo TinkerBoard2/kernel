@@ -44,6 +44,8 @@
 #define WAIT_FOR_HCD_READY_TIMEOUT	5000000 /* us */
 #define XHCI_TSTCTRL_MASK		(0xf << 28)
 
+extern int get_board_id(void);
+
 struct dwc3_rockchip {
 	int			num_clocks;
 	bool			connected;
@@ -640,7 +642,10 @@ static int dwc3_rockchip_get_extcon_dev(struct dwc3_rockchip *rockchip)
 	struct extcon_dev	*edev;
 
 	if (device_property_read_bool(dev, "extcon")) {
-		edev = extcon_get_edev_by_phandle(dev, 0);
+		if (get_board_id() >= 3)
+			edev = extcon_get_edev_by_phandle(dev, 1);
+		else
+			edev = extcon_get_edev_by_phandle(dev, 0);
 		if (IS_ERR(edev)) {
 			if (PTR_ERR(edev) != -EPROBE_DEFER)
 				dev_err(dev, "couldn't get extcon device\n");

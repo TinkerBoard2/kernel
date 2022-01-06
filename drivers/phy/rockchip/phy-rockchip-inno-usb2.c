@@ -43,6 +43,8 @@
 #define OTG_SCHEDULE_DELAY	(1 * HZ)
 #define BYPASS_SCHEDULE_DELAY	(2 * HZ)
 
+extern int get_board_id(void);
+
 struct rockchip_usb2phy;
 
 enum rockchip_usb2phy_port_id {
@@ -448,7 +450,10 @@ static int rockchip_usb2phy_extcon_register(struct rockchip_usb2phy *rphy)
 	struct extcon_dev *edev;
 
 	if (of_property_read_bool(node, "extcon")) {
-		edev = extcon_get_edev_by_phandle(rphy->dev, 0);
+		if (get_board_id() >= 3)
+			edev = extcon_get_edev_by_phandle(rphy->dev, 1);
+		else
+			edev = extcon_get_edev_by_phandle(rphy->dev, 0);
 		if (IS_ERR(edev)) {
 			if (PTR_ERR(edev) != -EPROBE_DEFER)
 				dev_err(rphy->dev, "Invalid or missing extcon\n");
