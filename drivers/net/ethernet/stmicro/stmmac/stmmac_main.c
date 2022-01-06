@@ -3228,6 +3228,62 @@ int stmmac_dvr_remove(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(stmmac_dvr_remove);
 
+void set_rtl8211e_wol_enable(struct phy_device *phydev)
+{
+	int value;
+	struct net_device * ndev = phydev->attached_dev;
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6e);
+
+	phy_write(phydev, 21, ((u16)ndev->dev_addr[1] << 8) + ndev->dev_addr[0]);
+	phy_write(phydev, 22, ((u16)ndev->dev_addr[3] << 8) + ndev->dev_addr[2]);
+	phy_write(phydev, 23, ((u16)ndev->dev_addr[5] << 8) + ndev->dev_addr[4]);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	phy_write(phydev, 22, 0x1fff);
+	value = phy_read(phydev, 22);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	phy_write(phydev, 21, 0x1000);
+	value = phy_read(phydev, 21);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	value =  phy_read(phydev, 25);
+	phy_write(phydev, 25, value | 0x1);
+
+	phy_write(phydev, 31, 0x0);
+	value = phy_read(phydev, 31);
+}
+
+void set_rtl8211e_wol_disable(struct phy_device *phydev)
+{
+	int value;
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	phy_write(phydev, 21, 0x0);
+	value = phy_read(phydev, 21);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	value =  phy_read(phydev, 22);
+	phy_write(phydev, 22, value | BIT(15));
+	value = phy_read(phydev, 22);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	value =  phy_read(phydev, 25);
+	phy_write(phydev, 25, value & (~(0x1)));
+
+	phy_write(phydev, 31, 0x0);
+	value = phy_read(phydev, 31);
+
+}
+
 void set_rtl8211f_wol_enable(struct phy_device *phydev)
 {
 	int value;
@@ -3318,7 +3374,13 @@ int stmmac_suspend(struct device *dev)
 	if (device_may_wakeup(priv->device)) {
 		priv->hw->mac->pmt(priv->hw, priv->wolopts);
 		//priv->irq_wake = 1;
-		set_rtl8211f_wol_enable(priv->phydev);
+		if (get_board_id() >= 3) {
+			// RTL8211E
+			set_rtl8211e_wol_enable(priv->phydev);
+		} else {
+			// RTL8211F
+			set_rtl8211f_wol_enable(priv->phydev);
+		}
 	} else {
 		stmmac_set_mac(priv->ioaddr, false);
 		pinctrl_pm_select_sleep_state(priv->device);
@@ -3358,7 +3420,13 @@ int stmmac_resume(struct device *dev)
 	if (device_may_wakeup(priv->device)) {
 		mutex_lock(&priv->lock);
 		priv->hw->mac->pmt(priv->hw, 0);
-		set_rtl8211f_wol_disable(priv->phydev);
+		if (get_board_id() >= 3) {
+			// RTL8211E
+			set_rtl8211e_wol_disable(priv->phydev);
+		} else {
+			// RTL8211F
+			set_rtl8211f_wol_disable(priv->phydev);
+		}
 		mutex_unlock(&priv->lock);
 		//priv->irq_wake = 0;
 	} else {
