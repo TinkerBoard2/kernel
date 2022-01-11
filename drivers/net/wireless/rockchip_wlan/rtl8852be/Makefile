@@ -109,7 +109,7 @@ endif
 CONFIG_RTW_DEBUG = y
 # default log level is _DRV_INFO_ = 4,
 # please refer to "How_to_set_driver_debug_log_level.doc" to set the available level.
-CONFIG_RTW_LOG_LEVEL = 4
+CONFIG_RTW_LOG_LEVEL = 2
 
 # enable /proc/net/rtlxxxx/ debug interfaces
 CONFIG_PROC_DEBUG = y
@@ -149,7 +149,7 @@ CONFIG_LAYER2_ROAMING = y
 CONFIG_ROAMING_FLAG = 0x3
 
 ###################### Platform Related #######################
-CONFIG_PLATFORM_I386_PC = y
+CONFIG_PLATFORM_I386_PC = n
 CONFIG_PLATFORM_RTL8198D = n
 CONFIG_PLATFORM_ANDROID_X86 = n
 CONFIG_PLATFORM_ANDROID_INTEL_X86 = n
@@ -160,6 +160,7 @@ CONFIG_PLATFORM_RTK1319 = n
 CONFIG_PLATFORM_RTK16XXB = n
 CONFIG_PLATFORM_AML_S905 = n
 CONFIG_PLATFORM_HUANGLONG = n
+CONFIG_PLATFORM_ARM_RK3399 = y
 
 ########### CUSTOMER ################################
 
@@ -191,6 +192,8 @@ else
 endif
 
 ifeq ($(CONFIG_PLATFORM_RTL8198D), y)
+DRV_PATH = $(src)
+else ifeq ($(CONFIG_PLATFORM_ARM_RK3399), y)
 DRV_PATH = $(src)
 else
 DRV_PATH = $(TopDIR)
