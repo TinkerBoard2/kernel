@@ -44,9 +44,9 @@ static int info_show(struct seq_file *m, void *v)
 	else if (pid == 2)
 		boardinfo = "Tinker Board 2S - 32GB";
 	else if (pid == 3)
-		boardinfo = "Tinker board 2 – TPS2556";
+		boardinfo = "Tinker Board 2 - TPS2556";
 	else if (pid == 4)
-		boardinfo = "Tinker board 2S – 16G – TPS2556";
+		boardinfo = "Tinker Board 2S - 16GB - TPS2556";
 	else
 		boardinfo = "unknown";
 
