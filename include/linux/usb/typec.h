@@ -106,7 +106,7 @@ struct usb_pd_identity {
 	u32			vdo[3];
 };
 
-//int typec_partner_set_identity(struct typec_partner *partner);
+int typec_partner_set_identity(struct typec_partner *partner);
 //int typec_cable_set_identity(struct typec_cable *cable);
 
 /*
@@ -129,26 +129,26 @@ struct typec_altmode_desc {
 
 //void typec_partner_set_pd_revision(struct typec_partner *partner, u16 pd_revision);
 //int typec_partner_set_num_altmodes(struct typec_partner *partner, int num_altmodes);
-//struct typec_altmode
-//*typec_partner_register_altmode(struct typec_partner *partner,
-//				const struct typec_altmode_desc *desc);
+struct typec_altmode
+*typec_partner_register_altmode(struct typec_partner *partner,
+				const struct typec_altmode_desc *desc);
 //int typec_plug_set_num_altmodes(struct typec_plug *plug, int num_altmodes);
 //struct typec_altmode
 //*typec_plug_register_altmode(struct typec_plug *plug,
 //			     const struct typec_altmode_desc *desc);
-//struct typec_altmode
-//*typec_port_register_altmode(struct typec_port *port,
-//			     const struct typec_altmode_desc *desc);
+struct typec_altmode
+*typec_port_register_altmode(struct typec_port *port,
+			     const struct typec_altmode_desc *desc);
 
 //void typec_port_register_altmodes(struct typec_port *port,
 //	const struct typec_altmode_ops *ops, void *drvdata,
 //	struct typec_altmode **altmodes, size_t n);
 
-//void typec_unregister_altmode(struct typec_altmode *altmode);
+void typec_unregister_altmode(struct typec_altmode *altmode);
 
-//struct typec_port *typec_altmode2port(struct typec_altmode *alt);
+struct typec_port *typec_altmode2port(struct typec_altmode *alt);
 
-//void typec_altmode_update_active(struct typec_altmode *alt, bool active);
+void typec_altmode_update_active(struct typec_altmode *alt, bool active);
 
 enum typec_plug_index {
 	TYPEC_PLUG_SOP_P,
@@ -263,13 +263,13 @@ struct typec_capability {
 /* Specific to try_role(). Indicates the user want's to clear the preference. */
 #define TYPEC_NO_PREFERRED_ROLE	(-1)
 
-//struct typec_port *typec_register_port(struct device *parent,
-//				       const struct typec_capability *cap);
-//void typec_unregister_port(struct typec_port *port);
+struct typec_port *typec_register_port(struct device *parent,
+				       const struct typec_capability *cap);
+void typec_unregister_port(struct typec_port *port);
 
-//struct typec_partner *typec_register_partner(struct typec_port *port,
-//					     struct typec_partner_desc *desc);
-//void typec_unregister_partner(struct typec_partner *partner);
+struct typec_partner *typec_register_partner(struct typec_port *port,
+					     struct typec_partner_desc *desc);
+void typec_unregister_partner(struct typec_partner *partner);
 
 //struct typec_cable *typec_register_cable(struct typec_port *port,
 //					 struct typec_cable_desc *desc);
@@ -293,7 +293,7 @@ struct typec_capability {
 //enum typec_orientation typec_get_orientation(struct typec_port *port);
 //int typec_set_mode(struct typec_port *port, int mode);
 
-//void *typec_get_drvdata(struct typec_port *port);
+void *typec_get_drvdata(struct typec_port *port);
 
 int typec_find_pwr_opmode(const char *name);
 int typec_find_orientation(const char *name);
@@ -301,20 +301,20 @@ int typec_find_port_power_role(const char *name);
 int typec_find_power_role(const char *name);
 int typec_find_port_data_role(const char *name);
 
-//void typec_partner_set_svdm_version(struct typec_partner *partner,
-//				    enum usb_pd_svdm_ver svdm_version);
-//int typec_get_negotiated_svdm_version(struct typec_port *port);
+void typec_partner_set_svdm_version(struct typec_partner *partner,
+				    enum usb_pd_svdm_ver svdm_version);
+int typec_get_negotiated_svdm_version(struct typec_port *port);
 
 #if IS_REACHABLE(CONFIG_TYPEC)
-//int typec_link_port(struct device *port);
-//void typec_unlink_port(struct device *port);
+int typec_link_port(struct device *port);
+void typec_unlink_port(struct device *port);
 #else
-//static inline int typec_link_port(struct device *port)
-//{
-//	return 0;
-//}
+static inline int typec_link_port(struct device *port)
+{
+	return 0;
+}
 
-//static inline void typec_unlink_port(struct device *port) { }
+static inline void typec_unlink_port(struct device *port) { }
 #endif
 
 #endif /* __LINUX_USB_TYPEC_H */

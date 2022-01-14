@@ -342,7 +342,7 @@ static int rt1711h_probe(struct i2c_client *client,
 					dev_name(chip->dev), chip);
 	if (ret < 0)
 		return ret;
-	enable_irq_wake(client->irq);
+	//enable_irq_wake(client->irq);
 
 	return 0;
 }

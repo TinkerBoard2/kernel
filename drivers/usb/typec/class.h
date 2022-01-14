@@ -49,8 +49,8 @@ struct typec_port {
 	struct mutex			port_type_lock;
 
 	enum typec_orientation		orientation;
-	struct typec_switch		*sw;
-	struct typec_mux		*mux;
+	//struct typec_switch		*sw;
+	//struct typec_mux		*mux;
 
 	const struct typec_capability	*cap;
 	const struct typec_operations   *ops;
@@ -66,10 +66,10 @@ struct typec_port {
 #define to_typec_cable(_dev_) container_of(_dev_, struct typec_cable, dev)
 #define to_typec_partner(_dev_) container_of(_dev_, struct typec_partner, dev)
 
-//extern const struct device_type typec_partner_dev_type;
-//extern const struct device_type typec_cable_dev_type;
-//extern const struct device_type typec_plug_dev_type;
-//extern const struct device_type typec_port_dev_type;
+extern const struct device_type typec_partner_dev_type;
+extern const struct device_type typec_cable_dev_type;
+extern const struct device_type typec_plug_dev_type;
+extern const struct device_type typec_port_dev_type;
 
 #define is_typec_partner(dev) ((dev)->type == &typec_partner_dev_type)
 #define is_typec_cable(dev) ((dev)->type == &typec_cable_dev_type)

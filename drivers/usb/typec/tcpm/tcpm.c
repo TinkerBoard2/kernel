@@ -30,6 +30,7 @@
 #include <linux/usb/role.h>
 #include <linux/usb/tcpm.h>
 #include <linux/usb/typec_altmode.h>
+#include <linux/usb/typec_dp.h>
 #include <linux/extcon.h>
 
 #include <linux/sched.h>
@@ -194,9 +195,19 @@ enum tcpm_ams {
 static const char * const tcpm_ams_str[] = {
 	FOREACH_AMS(GENERATE_STRING)
 };
-//202
 
-//216
+enum vdm_states {
+	VDM_STATE_ERR_BUSY = -3,
+	VDM_STATE_ERR_SEND = -2,
+	VDM_STATE_ERR_TMOUT = -1,
+	VDM_STATE_DONE = 0,
+	/* Anything >0 represents an active state */
+	VDM_STATE_READY = 1,
+	VDM_STATE_BUSY = 2,
+	VDM_STATE_WAIT_RSP_BUSY = 3,
+	VDM_STATE_SEND_MESSAGE = 4,
+};
+
 enum pd_msg_request {
 	PD_MSG_NONE = 0,
 	PD_MSG_CTRL_REJECT,
@@ -205,9 +216,15 @@ enum pd_msg_request {
 	PD_MSG_DATA_SINK_CAP,
 	PD_MSG_DATA_SOURCE_CAP,
 };
-//223
 
-//233
+enum adev_actions {
+	ADEV_NONE = 0,
+	ADEV_NOTIFY_USB_AND_QUEUE_VDM,
+	ADEV_QUEUE_VDM,
+	ADEV_QUEUE_VDM_SEND_EXIT_MODE_ON_FAIL,
+	ADEV_ATTENTION,
+};
+
 /*
  * Initial current capability of the new source when vSafe5V is applied during PD3.0 Fast Role Swap.
  * Based on "Table 6-14 Fixed Supply PDO - Sink" of "USB Power Delivery Specification Revision 3.0,
@@ -230,9 +247,23 @@ enum frs_typec_current {
 
 #define LOG_BUFFER_ENTRIES      1024
 #define LOG_BUFFER_ENTRY_SIZE   128
-//254
 
-//272
+/* Alternate mode support */
+
+#define SVID_DISCOVERY_MAX	16
+#define ALTMODE_DISCOVERY_MAX	(SVID_DISCOVERY_MAX * MODE_DISCOVERY_MAX)
+
+#define GET_SINK_CAP_RETRY_MS	100
+#define SEND_DISCOVER_RETRY_MS	100
+
+struct pd_mode_data {
+	int svid_index;		/* current SVID index		*/
+	int nsvids;
+	u16 svids[SVID_DISCOVERY_MAX];
+	int altmodes;		/* number of alternate modes	*/
+	struct typec_altmode_desc altmode_desc[ALTMODE_DISCOVERY_MAX];
+};
+
 /*
  * @min_volt: Actual min voltage at the local port
  * @req_min_volt: Requested min voltage to the port partner
@@ -287,6 +318,11 @@ struct tcpm_port {
 	enum typec_cc_status cc2;
 	enum typec_cc_polarity polarity;
 
+	bool extcon_hpd;
+        enum usb_role extcon_usb_role;
+        enum typec_orientation extcon_orientation;
+	struct typec_displayport_data *data;
+
 	bool attached;
 	bool connected;
 	bool registered;
@@ -333,12 +369,12 @@ struct tcpm_port {
 	struct hrtimer state_machine_timer;
 	struct kthread_work state_machine;
 	struct hrtimer vdm_state_machine_timer;
-	//struct kthread_work vdm_state_machine;
-	//struct hrtimer send_discover_timer;
-	//struct kthread_work send_discover_work;
+	struct kthread_work vdm_state_machine;
+	struct hrtimer send_discover_timer;
+	struct kthread_work send_discover_work;
 	bool state_machine_running;
 	/* Set to true when VDM State Machine has following actions. */
-	//bool vdm_sm_running;
+	bool vdm_sm_running;
 
 	struct completion tx_complete;
 	enum tcpm_transmit_status tx_status;
@@ -392,8 +428,8 @@ struct tcpm_port {
 	u32 bist_request;
 
 	/* PD state for Vendor Defined Messages */
-	//enum vdm_states vdm_state;
-	//u32 vdm_retries;
+	enum vdm_states vdm_state;
+	u32 vdm_retries;
 	/* next Vendor Defined Message to send */
 	u32 vdo_data[VDO_MAX_SIZE];
 	u8 vdo_count;
@@ -407,9 +443,9 @@ struct tcpm_port {
 	int pps_status;
 
 	/* Alternate mode data */
-	//struct pd_mode_data mode_data;
-	//struct typec_altmode *partner_altmode[ALTMODE_DISCOVERY_MAX];
-	//struct typec_altmode *port_altmode[ALTMODE_DISCOVERY_MAX];
+	struct pd_mode_data mode_data;
+	struct typec_altmode *partner_altmode[ALTMODE_DISCOVERY_MAX];
+	struct typec_altmode *port_altmode[ALTMODE_DISCOVERY_MAX];
 
 	/* Deadline in jiffies to exit src_try_wait state */
 	unsigned long max_wait;
@@ -848,6 +884,8 @@ static int tcpm_pd_transmit(struct tcpm_port *port,
 
 	if (msg){
 		tcpm_log(port, "PD TX, header: %#x", le16_to_cpu(msg->header));
+		tcpm_log(port, "PD TX, payload[0]: 0x%08x", le32_to_cpu(msg->payload[0]));
+		tcpm_log(port, "PD TX, payload[1]: 0x%08x", le32_to_cpu(msg->payload[1]));
 	} else {
 		tcpm_log(port, "PD TX, type: %#x", type);
 	}
@@ -908,22 +946,32 @@ static int tcpm_mux_set(struct tcpm_port *port, int state,
 {
 	int ret = 0;
 	union extcon_property_value property;
+	bool usb_ss = false, dp = false, hpd = false;
 
-	tcpm_log(port, "Requesting mux state %d, usb-role %d, orientation %d",
+	if (state == TYPEC_MODE_USB2 ||
+            state == TYPEC_MODE_USB3 ||
+            state == TYPEC_MODE_USB4)
+		if (port->data)
+			dp = true;
+
+	if (dp) {
+		usb_ss = !! (DP_CONF_GET_PIN_ASSIGN(port->data->conf) &
+			     DP_PIN_ASSIGN_MULTI_FUNC_MASK);
+		hpd = !!(port->data->status & DP_STATUS_HPD_STATE);
+	} else if (usb_role != USB_ROLE_NONE)
+		usb_ss = true;
+
+	if (hpd == port->extcon_hpd && usb_role == port->extcon_usb_role
+				    && orientation == port->extcon_orientation)
+		return 0;
+
+	port->extcon_hpd = hpd;
+	port->extcon_usb_role = usb_role;
+	port->extcon_orientation = orientation;
+
+	tcpm_log_force(port, "Requesting mux state %d, usb-role %d, orientation %d",
 		 state, usb_role, orientation);
 
-	//ret = typec_set_orientation(port->typec_port, orientation);
-	//if (ret)
-	//	return ret;
-
-	//if (port->role_sw) {
-	//	ret = usb_role_switch_set_role(port->role_sw, usb_role);
-	//	if (ret)
-	//		return ret;
-	//}
-
-	//ret = typec_set_mode(port->typec_port, state);
-	
 	property.intval = (orientation == TYPEC_ORIENTATION_REVERSE);
 	extcon_set_property(port->tcpc->extcon, EXTCON_USB,
 			    EXTCON_PROP_USB_TYPEC_POLARITY, property);
@@ -932,8 +980,7 @@ static int tcpm_mux_set(struct tcpm_port *port, int state,
 	extcon_set_property(port->tcpc->extcon, EXTCON_DISP_DP,
 			    EXTCON_PROP_USB_TYPEC_POLARITY, property);
 
-	//TODO usb ss not complete for ALT mode.
-	property.intval = (usb_role != USB_ROLE_NONE);
+	property.intval = usb_ss;
 	extcon_set_property(port->tcpc->extcon, EXTCON_USB,
 			    EXTCON_PROP_USB_SS, property);
 	extcon_set_property(port->tcpc->extcon, EXTCON_USB_HOST,
@@ -942,10 +989,12 @@ static int tcpm_mux_set(struct tcpm_port *port, int state,
 			    EXTCON_PROP_USB_SS, property);
 	extcon_set_state(port->tcpc->extcon, EXTCON_USB, usb_role == USB_ROLE_DEVICE);
 	extcon_set_state(port->tcpc->extcon, EXTCON_USB_HOST, usb_role == USB_ROLE_HOST);
-	extcon_set_state(port->tcpc->extcon, EXTCON_DISP_DP, state == TYPEC_STATE_MODAL);
+	extcon_set_state(port->tcpc->extcon, EXTCON_DISP_DP, hpd);
 	extcon_sync(port->tcpc->extcon, EXTCON_USB);
 	extcon_sync(port->tcpc->extcon, EXTCON_USB_HOST);
 	extcon_sync(port->tcpc->extcon, EXTCON_DISP_DP);
+
+	tcpm_log_force(port, "extcon notify: EXTCON_DISP_DP=%d usb_ss=%d", hpd, usb_ss);
 
 	return ret;
 }
@@ -1064,6 +1113,12 @@ static int tcpm_set_roles(struct tcpm_port *port, bool attached,
 		} else {
 			return -ENOTSUPP;
 		}
+	}
+
+	if (usb_role != port->extcon_usb_role) {
+		tcpm_mux_set(port, TYPEC_STATE_USB, USB_ROLE_NONE,
+			     orientation);
+		msleep(100);
 	}
 
 	ret = tcpm_mux_set(port, TYPEC_STATE_USB, usb_role, orientation);
@@ -1202,9 +1257,28 @@ static void mod_tcpm_delayed_work(struct tcpm_port *port, unsigned int delay_ms)
 		queue_kthread_work(&port->kworker, &port->state_machine);
 	}
 }
-//1203
 
-//1236
+static void mod_vdm_delayed_work(struct tcpm_port *port, unsigned int delay_ms)
+{
+	if (delay_ms) {
+		hrtimer_start(&port->vdm_state_machine_timer, ms_to_ktime(delay_ms),
+			      HRTIMER_MODE_REL);
+	} else {
+		hrtimer_cancel(&port->vdm_state_machine_timer);
+		queue_kthread_work(&port->kworker, &port->vdm_state_machine);
+	}
+}
+
+static void mod_send_discover_delayed_work(struct tcpm_port *port, unsigned int delay_ms)
+{
+	if (delay_ms) {
+		hrtimer_start(&port->send_discover_timer, ms_to_ktime(delay_ms), HRTIMER_MODE_REL);
+	} else {
+		hrtimer_cancel(&port->send_discover_timer);
+		queue_kthread_work(&port->kworker, &port->send_discover_work);
+	}
+}
+
 static void tcpm_set_state(struct tcpm_port *port, enum tcpm_state state,
 			   unsigned int delay_ms)
 {
@@ -1254,9 +1328,29 @@ static void tcpm_queue_message(struct tcpm_port *port,
 	port->queued_message = message;
 	mod_tcpm_delayed_work(port, 0);
 }
-//1284
 
-//1306
+static bool tcpm_vdm_ams(struct tcpm_port *port)
+{
+	switch (port->ams) {
+	case DISCOVER_IDENTITY:
+	case SOURCE_STARTUP_CABLE_PLUG_DISCOVER_IDENTITY:
+	case DISCOVER_SVIDS:
+	case DISCOVER_MODES:
+	case DFP_TO_UFP_ENTER_MODE:
+	case DFP_TO_UFP_EXIT_MODE:
+	case DFP_TO_CABLE_PLUG_ENTER_MODE:
+	case DFP_TO_CABLE_PLUG_EXIT_MODE:
+	case ATTENTION:
+	case UNSTRUCTURED_VDMS:
+	case STRUCTURED_VDMS:
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
 static bool tcpm_ams_interruptible(struct tcpm_port *port)
 {
 	switch (port->ams) {
@@ -1316,11 +1410,11 @@ static int tcpm_ams_start(struct tcpm_port *port, enum tcpm_ams ams)
 				tcpm_set_cc(port, tcpm_rp_cc(port));
 			tcpm_set_state(port, SOFT_RESET_SEND, 0);
 			return ret;
-//		} else if (tcpm_vdm_ams(port)) {
-//			/* tSinkTx is enforced in vdm_run_state_machine */
-//			if (port->negotiated_rev >= PD_REV30)
-//				tcpm_set_cc(port, SINK_TX_NG);
-//			return ret;
+		} else if (tcpm_vdm_ams(port)) {
+			/* tSinkTx is enforced in vdm_run_state_machine */
+			if (port->negotiated_rev >= PD_REV30)
+				tcpm_set_cc(port, SINK_TX_NG);
+			return ret;
 		}
 
 		if (port->negotiated_rev >= PD_REV30)
@@ -1364,8 +1458,8 @@ static int tcpm_ams_start(struct tcpm_port *port, enum tcpm_ams ams)
 			tcpm_pd_transmit(port, TCPC_TX_HARD_RESET, NULL);
 			tcpm_set_state(port, HARD_RESET_START, 0);
 			return ret;
-//		} else if (tcpm_vdm_ams(port)) {
-//			return ret;
+		} else if (tcpm_vdm_ams(port)) {
+			return ret;
 		}
 
 		if (port->state == SNK_READY ||
@@ -1377,9 +1471,641 @@ static int tcpm_ams_start(struct tcpm_port *port, enum tcpm_ams ams)
 
 	return ret;
 }
-//1428
 
-//2063
+/*
+ * VDM/VDO handling functions
+ */
+
+static void tcpm_queue_vdm(struct tcpm_port *port, const u32 header,
+			   const u32 *data, int cnt)
+{
+	WARN_ON(!mutex_is_locked(&port->lock));
+
+	/* Make sure we are not still processing a previous VDM packet */
+	WARN_ON(port->vdm_state > VDM_STATE_DONE);
+
+	port->vdo_count = cnt + 1;
+	port->vdo_data[0] = header;
+	memcpy(&port->vdo_data[1], data, sizeof(u32) * cnt);
+	/* Set ready, vdm state machine will actually send */
+	port->vdm_retries = 0;
+	port->vdm_state = VDM_STATE_READY;
+	port->vdm_sm_running = true;
+
+	mod_vdm_delayed_work(port, 0);
+}
+
+static void tcpm_queue_vdm_unlocked(struct tcpm_port *port, const u32 header,
+				    const u32 *data, int cnt)
+{
+	mutex_lock(&port->lock);
+	tcpm_queue_vdm(port, header, data, cnt);
+	mutex_unlock(&port->lock);
+}
+
+static void svdm_consume_identity(struct tcpm_port *port, const u32 *p, int cnt)
+{
+	u32 vdo = p[VDO_INDEX_IDH];
+	u32 product = p[VDO_INDEX_PRODUCT];
+
+	memset(&port->mode_data, 0, sizeof(port->mode_data));
+
+	port->partner_ident.id_header = vdo;
+	port->partner_ident.cert_stat = p[VDO_INDEX_CSTAT];
+	port->partner_ident.product = product;
+
+	typec_partner_set_identity(port->partner);
+
+	tcpm_log(port, "Identity: %04x:%04x.%04x",
+		 PD_IDH_VID(vdo),
+		 PD_PRODUCT_PID(product), product & 0xffff);
+}
+
+static bool svdm_consume_svids(struct tcpm_port *port, const u32 *p, int cnt)
+{
+	struct pd_mode_data *pmdata = &port->mode_data;
+	int i;
+
+	for (i = 1; i < cnt; i++) {
+		u16 svid;
+
+		svid = (p[i] >> 16) & 0xffff;
+		if (!svid)
+			return false;
+
+		if (pmdata->nsvids >= SVID_DISCOVERY_MAX)
+			goto abort;
+
+		pmdata->svids[pmdata->nsvids++] = svid;
+		tcpm_log(port, "SVID %d: 0x%x", pmdata->nsvids, svid);
+
+		svid = p[i] & 0xffff;
+		if (!svid)
+			return false;
+
+		if (pmdata->nsvids >= SVID_DISCOVERY_MAX)
+			goto abort;
+
+		pmdata->svids[pmdata->nsvids++] = svid;
+		tcpm_log(port, "SVID %d: 0x%x", pmdata->nsvids, svid);
+	}
+	return true;
+abort:
+	tcpm_log(port, "SVID_DISCOVERY_MAX(%d) too low!", SVID_DISCOVERY_MAX);
+	return false;
+}
+
+static void svdm_consume_modes(struct tcpm_port *port, const u32 *p, int cnt)
+{
+	struct pd_mode_data *pmdata = &port->mode_data;
+	struct typec_altmode_desc *paltmode;
+	int i;
+
+	if (pmdata->altmodes >= ARRAY_SIZE(port->partner_altmode)) {
+		/* Already logged in svdm_consume_svids() */
+		return;
+	}
+
+	for (i = 1; i < cnt; i++) {
+		paltmode = &pmdata->altmode_desc[pmdata->altmodes];
+		memset(paltmode, 0, sizeof(*paltmode));
+
+		paltmode->svid = pmdata->svids[pmdata->svid_index];
+		paltmode->mode = i;
+		paltmode->vdo = p[i];
+
+		tcpm_log(port, " Alternate mode %d: SVID 0x%04x, VDO %d: 0x%08x",
+			 pmdata->altmodes, paltmode->svid,
+			 paltmode->mode, paltmode->vdo);
+
+		pmdata->altmodes++;
+	}
+}
+
+static void tcpm_register_partner_altmodes(struct tcpm_port *port)
+{
+	struct pd_mode_data *modep = &port->mode_data;
+	struct typec_altmode *altmode;
+	int i;
+
+	for (i = 0; i < modep->altmodes; i++) {
+		altmode = typec_partner_register_altmode(port->partner,
+						&modep->altmode_desc[i]);
+		if (IS_ERR(altmode)) {
+			tcpm_log(port, "Failed to register partner SVID 0x%04x",
+				 modep->altmode_desc[i].svid);
+			altmode = NULL;
+		}
+		port->partner_altmode[i] = altmode;
+	}
+}
+
+#define supports_modal(port)	PD_IDH_MODAL_SUPP((port)->partner_ident.id_header)
+
+static int tcpm_pd_svdm(struct tcpm_port *port, struct typec_altmode *adev,
+			const u32 *p, int cnt, u32 *response,
+			enum adev_actions *adev_action)
+{
+	struct typec_port *typec = port->typec_port;
+	struct typec_altmode *pdev;
+	struct pd_mode_data *modep;
+	int svdm_version;
+	int rlen = 0;
+	int cmd_type;
+	int cmd;
+	int i;
+
+	cmd_type = PD_VDO_CMDT(p[0]);
+	cmd = PD_VDO_CMD(p[0]);
+
+	tcpm_log(port, "Rx VDM cmd 0x%x type %d cmd %d len %d",
+		 p[0], cmd_type, cmd, cnt);
+
+	modep = &port->mode_data;
+
+	pdev = typec_match_altmode(port->partner_altmode, ALTMODE_DISCOVERY_MAX,
+				   PD_VDO_VID(p[0]), PD_VDO_OPOS(p[0]));
+
+	svdm_version = typec_get_negotiated_svdm_version(typec);
+	if (svdm_version < 0)
+		return 0;
+
+	switch (cmd_type) {
+	case CMDT_INIT:
+		switch (cmd) {
+		case CMD_DISCOVER_IDENT:
+			if (PD_VDO_VID(p[0]) != USB_SID_PD)
+				break;
+
+			if (PD_VDO_SVDM_VER(p[0]) < svdm_version) {
+				typec_partner_set_svdm_version(port->partner,
+							       PD_VDO_SVDM_VER(p[0]));
+				svdm_version = PD_VDO_SVDM_VER(p[0]);
+			}
+
+			port->ams = DISCOVER_IDENTITY;
+			/*
+			 * PD2.0 Spec 6.10.3: respond with NAK as DFP (data host)
+			 * PD3.1 Spec 6.4.4.2.5.1: respond with NAK if "invalid field" or
+			 * "wrong configuation" or "Unrecognized"
+			 */
+			if ((port->data_role == TYPEC_DEVICE || svdm_version >= SVDM_VER_2_0) &&
+			    port->nr_snk_vdo) {
+				if (svdm_version < SVDM_VER_2_0) {
+					for (i = 0; i < port->nr_snk_vdo_v1; i++)
+						response[i + 1] = port->snk_vdo_v1[i];
+					rlen = port->nr_snk_vdo_v1 + 1;
+
+				} else {
+					for (i = 0; i < port->nr_snk_vdo; i++)
+						response[i + 1] = port->snk_vdo[i];
+					rlen = port->nr_snk_vdo + 1;
+				}
+			}
+			break;
+		case CMD_DISCOVER_SVID:
+			port->ams = DISCOVER_SVIDS;
+			break;
+		case CMD_DISCOVER_MODES:
+			port->ams = DISCOVER_MODES;
+			break;
+		case CMD_ENTER_MODE:
+			port->ams = DFP_TO_UFP_ENTER_MODE;
+			break;
+		case CMD_EXIT_MODE:
+			port->ams = DFP_TO_UFP_EXIT_MODE;
+			break;
+		case CMD_ATTENTION:
+			/* Attention command does not have response */
+			*adev_action = ADEV_ATTENTION;
+			return 0;
+		default:
+			break;
+		}
+		if (rlen >= 1) {
+			response[0] = p[0] | VDO_CMDT(CMDT_RSP_ACK);
+		} else if (rlen == 0) {
+			response[0] = p[0] | VDO_CMDT(CMDT_RSP_NAK);
+			rlen = 1;
+		} else {
+			response[0] = p[0] | VDO_CMDT(CMDT_RSP_BUSY);
+			rlen = 1;
+		}
+		response[0] = (response[0] & ~VDO_SVDM_VERS_MASK) |
+			      (VDO_SVDM_VERS(typec_get_negotiated_svdm_version(typec)));
+		break;
+	case CMDT_RSP_ACK:
+		/* silently drop message if we are not connected */
+		if (IS_ERR_OR_NULL(port->partner))
+			break;
+
+		tcpm_ams_finish(port);
+
+		switch (cmd) {
+		case CMD_DISCOVER_IDENT:
+			if (PD_VDO_SVDM_VER(p[0]) < svdm_version)
+				typec_partner_set_svdm_version(port->partner,
+							       PD_VDO_SVDM_VER(p[0]));
+			/* 6.4.4.3.1 */
+			svdm_consume_identity(port, p, cnt);
+			response[0] = VDO(USB_SID_PD, 1, typec_get_negotiated_svdm_version(typec),
+					  CMD_DISCOVER_SVID);
+			rlen = 1;
+			break;
+		case CMD_DISCOVER_SVID:
+			/* 6.4.4.3.2 */
+			if (svdm_consume_svids(port, p, cnt)) {
+				response[0] = VDO(USB_SID_PD, 1, svdm_version, CMD_DISCOVER_SVID);
+				rlen = 1;
+			} else if (modep->nsvids && supports_modal(port)) {
+				response[0] = VDO(modep->svids[0], 1, svdm_version,
+						  CMD_DISCOVER_MODES);
+				rlen = 1;
+			}
+			break;
+		case CMD_DISCOVER_MODES:
+			/* 6.4.4.3.3 */
+			svdm_consume_modes(port, p, cnt);
+			modep->svid_index++;
+			if (modep->svid_index < modep->nsvids) {
+				u16 svid = modep->svids[modep->svid_index];
+				response[0] = VDO(svid, 1, svdm_version, CMD_DISCOVER_MODES);
+				rlen = 1;
+			} else {
+				tcpm_register_partner_altmodes(port);
+			}
+			break;
+		case CMD_ENTER_MODE:
+			if (adev && pdev) {
+				typec_altmode_update_active(pdev, true);
+				*adev_action = ADEV_QUEUE_VDM_SEND_EXIT_MODE_ON_FAIL;
+			}
+			return 0;
+		case CMD_EXIT_MODE:
+			if (adev && pdev) {
+				typec_altmode_update_active(pdev, false);
+				/* Back to USB Operation */
+				*adev_action = ADEV_NOTIFY_USB_AND_QUEUE_VDM;
+				return 0;
+			}
+			break;
+		case VDO_CMD_VENDOR(0) ... VDO_CMD_VENDOR(15):
+			break;
+		default:
+			/* Unrecognized SVDM */
+			response[0] = p[0] | VDO_CMDT(CMDT_RSP_NAK);
+			rlen = 1;
+			response[0] = (response[0] & ~VDO_SVDM_VERS_MASK) |
+				      (VDO_SVDM_VERS(svdm_version));
+			break;
+		}
+		break;
+	case CMDT_RSP_NAK:
+		tcpm_ams_finish(port);
+		switch (cmd) {
+		case CMD_DISCOVER_IDENT:
+		case CMD_DISCOVER_SVID:
+		case CMD_DISCOVER_MODES:
+		case VDO_CMD_VENDOR(0) ... VDO_CMD_VENDOR(15):
+			break;
+		case CMD_ENTER_MODE:
+			/* Back to USB Operation */
+			*adev_action = ADEV_NOTIFY_USB_AND_QUEUE_VDM;
+			return 0;
+		default:
+			/* Unrecognized SVDM */
+			response[0] = p[0] | VDO_CMDT(CMDT_RSP_NAK);
+			rlen = 1;
+			response[0] = (response[0] & ~VDO_SVDM_VERS_MASK) |
+				      (VDO_SVDM_VERS(svdm_version));
+			break;
+		}
+		break;
+	default:
+		response[0] = p[0] | VDO_CMDT(CMDT_RSP_NAK);
+		rlen = 1;
+		response[0] = (response[0] & ~VDO_SVDM_VERS_MASK) |
+			      (VDO_SVDM_VERS(svdm_version));
+		break;
+	}
+
+	/* Informing the alternate mode drivers about everything */
+	*adev_action = ADEV_QUEUE_VDM;
+	return rlen;
+}
+
+static void tcpm_pd_handle_msg(struct tcpm_port *port,
+			       enum pd_msg_request message,
+			       enum tcpm_ams ams);
+
+static void tcpm_handle_vdm_request(struct tcpm_port *port,
+				    const __le32 *payload, int cnt)
+{
+	enum adev_actions adev_action = ADEV_NONE;
+	struct typec_altmode *adev;
+	u32 p[PD_MAX_PAYLOAD];
+	u32 response[8] = { };
+	int i, rlen = 0;
+
+	for (i = 0; i < cnt; i++)
+		p[i] = le32_to_cpu(payload[i]);
+
+	adev = typec_match_altmode(port->port_altmode, ALTMODE_DISCOVERY_MAX,
+				   PD_VDO_VID(p[0]), PD_VDO_OPOS(p[0]));
+
+	if (port->vdm_state == VDM_STATE_BUSY) {
+		/* If UFP responded busy retry after timeout */
+		if (PD_VDO_CMDT(p[0]) == CMDT_RSP_BUSY) {
+			port->vdm_state = VDM_STATE_WAIT_RSP_BUSY;
+			port->vdo_retry = (p[0] & ~VDO_CMDT_MASK) |
+				CMDT_INIT;
+			mod_vdm_delayed_work(port, PD_T_VDM_BUSY);
+			return;
+		}
+		port->vdm_state = VDM_STATE_DONE;
+	}
+
+	if (PD_VDO_SVDM(p[0]) && (adev || tcpm_vdm_ams(port) || port->nr_snk_vdo)) {
+		/*
+		 * Here a SVDM is received (INIT or RSP or unknown). Set the vdm_sm_running in
+		 * advance because we are dropping the lock but may send VDMs soon.
+		 * For the cases of INIT received:
+		 *  - If no response to send, it will be cleared later in this function.
+		 *  - If there are responses to send, it will be cleared in the state machine.
+		 * For the cases of RSP received:
+		 *  - If no further INIT to send, it will be cleared later in this function.
+		 *  - Otherwise, it will be cleared in the state machine if timeout or it will go
+		 *    back here until no further INIT to send.
+		 * For the cases of unknown type received:
+		 *  - We will send NAK and the flag will be cleared in the state machine.
+		 */
+		port->vdm_sm_running = true;
+		rlen = tcpm_pd_svdm(port, adev, p, cnt, response, &adev_action);
+	} else {
+		if (port->negotiated_rev >= PD_REV30)
+			tcpm_pd_handle_msg(port, PD_MSG_CTRL_NOT_SUPP, NONE_AMS);
+	}
+
+	/*
+	 * We are done with any state stored in the port struct now, except
+	 * for any port struct changes done by the tcpm_queue_vdm() call
+	 * below, which is a separate operation.
+	 *
+	 * So we can safely release the lock here; and we MUST release the
+	 * lock here to avoid an AB BA lock inversion:
+	 *
+	 * If we keep the lock here then the lock ordering in this path is:
+	 * 1. tcpm_pd_rx_handler take the tcpm port lock
+	 * 2. One of the typec_altmode_* calls below takes the alt-mode's lock
+	 *
+	 * And we also have this ordering:
+	 * 1. alt-mode driver takes the alt-mode's lock
+	 * 2. alt-mode driver calls tcpm_altmode_enter which takes the
+	 *    tcpm port lock
+	 *
+	 * Dropping our lock here avoids this.
+	 */
+	mutex_unlock(&port->lock);
+
+	if (adev) {
+		switch (adev_action) {
+		case ADEV_NONE:
+			break;
+		case ADEV_NOTIFY_USB_AND_QUEUE_VDM:
+			WARN_ON(typec_altmode_notify(adev, TYPEC_STATE_USB, NULL));
+			typec_altmode_vdm(adev, p[0], &p[1], cnt);
+			break;
+		case ADEV_QUEUE_VDM:
+			typec_altmode_vdm(adev, p[0], &p[1], cnt);
+			break;
+		case ADEV_QUEUE_VDM_SEND_EXIT_MODE_ON_FAIL:
+			if (typec_altmode_vdm(adev, p[0], &p[1], cnt)) {
+				int svdm_version = typec_get_negotiated_svdm_version(
+									port->typec_port);
+				if (svdm_version < 0)
+					break;
+
+				response[0] = VDO(adev->svid, 1, svdm_version,
+						  CMD_EXIT_MODE);
+				response[0] |= VDO_OPOS(adev->mode);
+				rlen = 1;
+			}
+			break;
+		case ADEV_ATTENTION:
+			typec_altmode_attention(adev, p[1]);
+			break;
+		}
+	}
+
+	/*
+	 * We must re-take the lock here to balance the unlock in
+	 * tcpm_pd_rx_handler, note that no changes, other then the
+	 * tcpm_queue_vdm call, are made while the lock is held again.
+	 * All that is done after the call is unwinding the call stack until
+	 * we return to tcpm_pd_rx_handler and do the unlock there.
+	 */
+	mutex_lock(&port->lock);
+
+	if (rlen > 0)
+		tcpm_queue_vdm(port, response[0], &response[1], rlen - 1);
+	else
+		port->vdm_sm_running = false;
+}
+
+static void tcpm_send_vdm(struct tcpm_port *port, u32 vid, int cmd,
+			  const u32 *data, int count)
+{
+	int svdm_version = typec_get_negotiated_svdm_version(port->typec_port);
+	u32 header;
+
+	if (svdm_version < 0)
+		return;
+
+	if (WARN_ON(count > VDO_MAX_SIZE - 1))
+		count = VDO_MAX_SIZE - 1;
+
+	/* set VDM header with VID & CMD */
+	header = VDO(vid, ((vid & USB_SID_PD) == USB_SID_PD) ?
+			1 : (PD_VDO_CMD(cmd) <= CMD_ATTENTION),
+			svdm_version, cmd);
+	tcpm_queue_vdm(port, header, data, count);
+}
+
+static unsigned int vdm_ready_timeout(u32 vdm_hdr)
+{
+	unsigned int timeout;
+	int cmd = PD_VDO_CMD(vdm_hdr);
+
+	/* its not a structured VDM command */
+	if (!PD_VDO_SVDM(vdm_hdr))
+		return PD_T_VDM_UNSTRUCTURED;
+
+	switch (PD_VDO_CMDT(vdm_hdr)) {
+	case CMDT_INIT:
+		if (cmd == CMD_ENTER_MODE || cmd == CMD_EXIT_MODE)
+			timeout = PD_T_VDM_WAIT_MODE_E;
+		else
+			timeout = PD_T_VDM_SNDR_RSP;
+		break;
+	default:
+		if (cmd == CMD_ENTER_MODE || cmd == CMD_EXIT_MODE)
+			timeout = PD_T_VDM_E_MODE;
+		else
+			timeout = PD_T_VDM_RCVR_RSP;
+		break;
+	}
+	return timeout;
+}
+
+static void vdm_run_state_machine(struct tcpm_port *port)
+{
+	struct pd_message msg;
+	int i, res = 0;
+	u32 vdo_hdr = port->vdo_data[0];
+
+	switch (port->vdm_state) {
+	case VDM_STATE_READY:
+		/* Only transmit VDM if attached */
+		if (!port->attached) {
+			port->vdm_state = VDM_STATE_ERR_BUSY;
+			break;
+		}
+
+		/*
+		 * if there's traffic or we're not in PDO ready state don't send
+		 * a VDM.
+		 */
+		if (port->state != SRC_READY && port->state != SNK_READY) {
+			port->vdm_sm_running = false;
+			break;
+		}
+
+		/* TODO: AMS operation for Unstructured VDM */
+		if (PD_VDO_SVDM(vdo_hdr) && PD_VDO_CMDT(vdo_hdr) == CMDT_INIT) {
+			switch (PD_VDO_CMD(vdo_hdr)) {
+			case CMD_DISCOVER_IDENT:
+				res = tcpm_ams_start(port, DISCOVER_IDENTITY);
+				if (res == 0)
+					port->send_discover = false;
+				else if (res == -EAGAIN)
+					mod_send_discover_delayed_work(port,
+								       SEND_DISCOVER_RETRY_MS);
+				break;
+			case CMD_DISCOVER_SVID:
+				res = tcpm_ams_start(port, DISCOVER_SVIDS);
+				break;
+			case CMD_DISCOVER_MODES:
+				res = tcpm_ams_start(port, DISCOVER_MODES);
+				break;
+			case CMD_ENTER_MODE:
+				res = tcpm_ams_start(port, DFP_TO_UFP_ENTER_MODE);
+				break;
+			case CMD_EXIT_MODE:
+				res = tcpm_ams_start(port, DFP_TO_UFP_EXIT_MODE);
+				break;
+			case CMD_ATTENTION:
+				res = tcpm_ams_start(port, ATTENTION);
+				break;
+			case VDO_CMD_VENDOR(0) ... VDO_CMD_VENDOR(15):
+				res = tcpm_ams_start(port, STRUCTURED_VDMS);
+				break;
+			default:
+				res = -EOPNOTSUPP;
+				break;
+			}
+
+			if (res < 0) {
+				port->vdm_state = VDM_STATE_ERR_BUSY;
+				return;
+			}
+		}
+
+		port->vdm_state = VDM_STATE_SEND_MESSAGE;
+		mod_vdm_delayed_work(port, (port->negotiated_rev >= PD_REV30 &&
+					    port->pwr_role == TYPEC_SOURCE &&
+					    PD_VDO_SVDM(vdo_hdr) &&
+					    PD_VDO_CMDT(vdo_hdr) == CMDT_INIT) ?
+					   PD_T_SINK_TX : 0);
+		break;
+	case VDM_STATE_WAIT_RSP_BUSY:
+		port->vdo_data[0] = port->vdo_retry;
+		port->vdo_count = 1;
+		port->vdm_state = VDM_STATE_READY;
+		tcpm_ams_finish(port);
+		break;
+	case VDM_STATE_BUSY:
+		port->vdm_state = VDM_STATE_ERR_TMOUT;
+		if (port->ams != NONE_AMS)
+			tcpm_ams_finish(port);
+		break;
+	case VDM_STATE_ERR_SEND:
+		/*
+		 * A partner which does not support USB PD will not reply,
+		 * so this is not a fatal error. At the same time, some
+		 * devices may not return GoodCRC under some circumstances,
+		 * so we need to retry.
+		 */
+		if (port->vdm_retries < 3) {
+			tcpm_log(port, "VDM Tx error, retry");
+			port->vdm_retries++;
+			port->vdm_state = VDM_STATE_READY;
+			if (PD_VDO_SVDM(vdo_hdr) && PD_VDO_CMDT(vdo_hdr) == CMDT_INIT)
+				tcpm_ams_finish(port);
+		} else {
+			tcpm_ams_finish(port);
+		}
+		break;
+	case VDM_STATE_SEND_MESSAGE:
+		/* Prepare and send VDM */
+		memset(&msg, 0, sizeof(msg));
+		msg.header = PD_HEADER_LE(PD_DATA_VENDOR_DEF,
+					  port->pwr_role,
+					  port->data_role,
+					  port->negotiated_rev,
+					  port->message_id, port->vdo_count);
+		for (i = 0; i < port->vdo_count; i++)
+			msg.payload[i] = cpu_to_le32(port->vdo_data[i]);
+		res = tcpm_pd_transmit(port, TCPC_TX_SOP, &msg);
+		if (res < 0) {
+			port->vdm_state = VDM_STATE_ERR_SEND;
+		} else {
+			unsigned long timeout;
+
+			port->vdm_retries = 0;
+			port->vdm_state = VDM_STATE_BUSY;
+			timeout = vdm_ready_timeout(vdo_hdr);
+			mod_vdm_delayed_work(port, timeout);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void vdm_state_machine_work(struct kthread_work *work)
+{
+	struct tcpm_port *port = container_of(work, struct tcpm_port, vdm_state_machine);
+	enum vdm_states prev_state;
+
+	mutex_lock(&port->lock);
+
+	/*
+	 * Continue running as long as the port is not busy and there was
+	 * a state change.
+	 */
+	do {
+		prev_state = port->vdm_state;
+		vdm_run_state_machine(port);
+	} while (port->vdm_state != prev_state &&
+		 port->vdm_state != VDM_STATE_BUSY &&
+		 port->vdm_state != VDM_STATE_SEND_MESSAGE);
+
+	if (port->vdm_state < VDM_STATE_READY)
+		port->vdm_sm_running = false;
+
+	mutex_unlock(&port->lock);
+}
+
 enum pdo_err {
 	PDO_NO_ERR,
 	PDO_ERR_NO_VSAFE5V,
@@ -1499,9 +2225,73 @@ static int tcpm_validate_caps(struct tcpm_port *port, const u32 *pdo,
 
 	return 0;
 }
-//2181
 
-//2233
+static int tcpm_altmode_enter(struct typec_altmode *altmode, u32 *vdo)
+{
+	struct tcpm_port *port = typec_altmode_get_drvdata(altmode);
+	int svdm_version;
+	u32 header;
+
+	svdm_version = typec_get_negotiated_svdm_version(port->typec_port);
+	if (svdm_version < 0)
+		return svdm_version;
+
+	header = VDO(altmode->svid, vdo ? 2 : 1, svdm_version, CMD_ENTER_MODE);
+	header |= VDO_OPOS(altmode->mode);
+
+	tcpm_queue_vdm_unlocked(port, header, vdo, vdo ? 1 : 0);
+	return 0;
+}
+
+static int tcpm_altmode_exit(struct typec_altmode *altmode)
+{
+	struct tcpm_port *port = typec_altmode_get_drvdata(altmode);
+	int svdm_version;
+	u32 header;
+
+	svdm_version = typec_get_negotiated_svdm_version(port->typec_port);
+	if (svdm_version < 0)
+		return svdm_version;
+
+	header = VDO(altmode->svid, 1, svdm_version, CMD_EXIT_MODE);
+	header |= VDO_OPOS(altmode->mode);
+
+	tcpm_queue_vdm_unlocked(port, header, NULL, 0);
+	return 0;
+}
+
+static int tcpm_altmode_vdm(struct typec_altmode *altmode,
+			    u32 header, const u32 *data, int count)
+{
+	struct tcpm_port *port = typec_altmode_get_drvdata(altmode);
+
+	tcpm_queue_vdm_unlocked(port, header, data, count - 1);
+
+	return 0;
+}
+
+static int tcpm_altmode_notify(struct typec_altmode *altmode,
+			       unsigned long conf, void *data)
+{
+        struct tcpm_port *port = typec_altmode_get_drvdata(altmode);
+	port->data = data;
+
+	tcpm_log_force(port, "altmode notify alt mode: %lu, DisplayPort Status: 0x%08x",
+		       conf, port->data->status);
+	tcpm_mux_set(port, (int)conf, port->extcon_usb_role,
+                     port->extcon_orientation);
+        return 0;
+}
+
+
+static const struct typec_altmode_ops tcpm_altmode_ops = {
+	.enter = tcpm_altmode_enter,
+	.exit = tcpm_altmode_exit,
+	.vdm = tcpm_altmode_vdm,
+	.notify = tcpm_altmode_notify,
+};
+
+
 /*
  * PD (data, control) command handling functions
  */
@@ -1634,11 +2424,11 @@ static void tcpm_pd_data_request(struct tcpm_port *port,
 	unsigned int rev = pd_header_rev_le(msg->header);
 	unsigned int i;
 
-//	if (tcpm_vdm_ams(port) && type != PD_DATA_VENDOR_DEF) {
-//		port->vdm_state = VDM_STATE_ERR_BUSY;
-//		tcpm_ams_finish(port);
-//		mod_vdm_delayed_work(port, 0);
-//	}
+	if (tcpm_vdm_ams(port) && type != PD_DATA_VENDOR_DEF) {
+		port->vdm_state = VDM_STATE_ERR_BUSY;
+		tcpm_ams_finish(port);
+		mod_vdm_delayed_work(port, 0);
+	}
 
 	switch (type) {
 	case PD_DATA_SOURCE_CAP:
@@ -1729,10 +2519,10 @@ static void tcpm_pd_data_request(struct tcpm_port *port,
 
 		port->sink_request = le32_to_cpu(msg->payload[0]);
 
-//		if (port->vdm_sm_running && port->explicit_contract) {
-//			tcpm_pd_handle_msg(port, PD_MSG_CTRL_WAIT, port->ams);
-//			break;
-//		}
+		if (port->vdm_sm_running && port->explicit_contract) {
+			tcpm_pd_handle_msg(port, PD_MSG_CTRL_WAIT, port->ams);
+			break;
+		}
 
 		if (port->state == SRC_SEND_CAPABILITIES)
 			tcpm_set_state(port, SRC_NEGOTIATE_CAPABILITIES, 0);
@@ -1758,7 +2548,7 @@ static void tcpm_pd_data_request(struct tcpm_port *port,
 					   NONE_AMS);
 		break;
 	case PD_DATA_VENDOR_DEF:
-		//tcpm_handle_vdm_request(port, msg->payload, cnt);
+		tcpm_handle_vdm_request(port, msg->payload, cnt);
 		break;
 	case PD_DATA_BIST:
 		port->bist_request = le32_to_cpu(msg->payload[0]);
@@ -1809,11 +2599,11 @@ static void tcpm_pd_ctrl_request(struct tcpm_port *port,
 	 * Stop VDM state machine if interrupted by other Messages while NOT_SUPP is allowed in
 	 * VDM AMS if waiting for VDM responses and will be handled later.
 	 */
-//	if (tcpm_vdm_ams(port) && type != PD_CTRL_NOT_SUPP && type != PD_CTRL_GOOD_CRC) {
-//		port->vdm_state = VDM_STATE_ERR_BUSY;
-//		tcpm_ams_finish(port);
-//		mod_vdm_delayed_work(port, 0);
-//	}
+	if (tcpm_vdm_ams(port) && type != PD_CTRL_NOT_SUPP && type != PD_CTRL_GOOD_CRC) {
+		port->vdm_state = VDM_STATE_ERR_BUSY;
+		tcpm_ams_finish(port);
+		mod_vdm_delayed_work(port, 0);
+	}
 
 	switch (type) {
 	case PD_CTRL_GOOD_CRC:
@@ -1919,13 +2709,13 @@ static void tcpm_pd_ctrl_request(struct tcpm_port *port,
 			break;
 		case SRC_READY:
 		case SNK_READY:
-//			if (port->vdm_state > VDM_STATE_READY) {
-//				port->vdm_state = VDM_STATE_DONE;
-//				if (tcpm_vdm_ams(port))
-//					tcpm_ams_finish(port);
-//				mod_vdm_delayed_work(port, 0);
-//				break;
-//			}
+			if (port->vdm_state > VDM_STATE_READY) {
+				port->vdm_state = VDM_STATE_DONE;
+				if (tcpm_vdm_ams(port))
+					tcpm_ams_finish(port);
+				mod_vdm_delayed_work(port, 0);
+				break;
+			}
 		default:
 			tcpm_pd_handle_state(port,
 					     port->pwr_role == TYPEC_SOURCE ?
@@ -2058,11 +2848,11 @@ static void tcpm_pd_ext_msg_request(struct tcpm_port *port,
 	unsigned int data_size = pd_ext_header_data_size_le(msg->ext_msg.header);
 
 	/* stopping VDM state machine if interrupted by other Messages */
-//	if (tcpm_vdm_ams(port)) {
-//		port->vdm_state = VDM_STATE_ERR_BUSY;
-//		tcpm_ams_finish(port);
-//		mod_vdm_delayed_work(port, 0);
-//	}
+	if (tcpm_vdm_ams(port)) {
+		port->vdm_state = VDM_STATE_ERR_BUSY;
+		tcpm_ams_finish(port);
+		mod_vdm_delayed_work(port, 0);
+	}
 
 	if (!(le16_to_cpu(msg->ext_msg.header) & PD_EXT_HDR_CHUNKED)) {
 		tcpm_pd_handle_msg(port, PD_MSG_CTRL_NOT_SUPP, NONE_AMS);
@@ -2802,8 +3592,8 @@ static void tcpm_typec_connect(struct tcpm_port *port)
 			port->partner_desc.accessory = TYPEC_ACCESSORY_AUDIO;
 		else
 			port->partner_desc.accessory = TYPEC_ACCESSORY_NONE;
-		//port->partner = typec_register_partner(port->typec_port,
-		//				       &port->partner_desc);
+		port->partner = typec_register_partner(port->typec_port,
+						       &port->partner_desc);
 		port->connected = true;
 	}
 }
@@ -2873,26 +3663,46 @@ out_disable_mux:
 static void tcpm_typec_disconnect(struct tcpm_port *port)
 {
 	if (port->connected) {
-		//typec_unregister_partner(port->partner);
+		typec_unregister_partner(port->partner);
 		port->partner = NULL;
 		port->connected = false;
 	}
 }
-//3634
 
-//3656
+static void tcpm_unregister_altmodes(struct tcpm_port *port)
+{
+	struct pd_mode_data *modep = &port->mode_data;
+	int i;
+
+	for (i = 0; i < modep->altmodes; i++) {
+		typec_unregister_altmode(port->partner_altmode[i]);
+		port->partner_altmode[i] = NULL;
+	}
+
+	memset(modep, 0, sizeof(*modep));
+}
+
+static void tcpm_set_partner_usb_comm_capable(struct tcpm_port *port, bool capable)
+{
+	tcpm_log(port, "Setting usb_comm capable %s", capable ? "true" : "false");
+
+	if (port->tcpc->set_partner_usb_comm_capable)
+		port->tcpc->set_partner_usb_comm_capable(port->tcpc, capable);
+}
+
 static void tcpm_reset_port(struct tcpm_port *port)
 {
 	tcpm_enable_auto_vbus_discharge(port, false);
 	port->in_ams = false;
 	port->ams = NONE_AMS;
-	//port->vdm_sm_running = false;
-	//tcpm_unregister_altmodes(port);
+	port->vdm_sm_running = false;
+	tcpm_unregister_altmodes(port);
 	tcpm_typec_disconnect(port);
 	port->attached = false;
 	port->pd_capable = false;
 	port->pps_data.supported = false;
-	//tcpm_set_partner_usb_comm_capable(port, false);
+	tcpm_set_partner_usb_comm_capable(port, false);
+	port->data = NULL;
 
 	/*
 	 * First Rx ID should be 0; set this to a sentinel of -1 so that
@@ -3236,8 +4046,8 @@ static void run_state_machine(struct tcpm_port *port)
 			}
 		} else {
 			tcpm_pd_send_control(port, PD_CTRL_ACCEPT);
-			//tcpm_set_partner_usb_comm_capable(port,
-			//				  !!(port->sink_request & RDO_USB_COMM));
+			tcpm_set_partner_usb_comm_capable(port,
+							  !!(port->sink_request & RDO_USB_COMM));
 			tcpm_set_state(port, SRC_TRANSITION_SUPPLY,
 				       PD_T_SRC_TRANSITION);
 		}
@@ -3284,9 +4094,9 @@ static void run_state_machine(struct tcpm_port *port)
 		 * For now, this driver only supports SOP for DISCOVER_IDENTITY, thus using
 		 * port->explicit_contract to decide whether to send the command.
 		 */
-//		if (port->explicit_contract)
-//			mod_send_discover_delayed_work(port, 0);
-//		else
+		if (port->explicit_contract)
+			mod_send_discover_delayed_work(port, 0);
+		else
 			port->send_discover = false;
 
 		/*
@@ -3469,8 +4279,8 @@ static void run_state_machine(struct tcpm_port *port)
 		break;
 	case SNK_NEGOTIATE_CAPABILITIES:
 		port->pd_capable = true;
-		//tcpm_set_partner_usb_comm_capable(port,
-		//				  !!(port->source_caps[0] & PDO_FIXED_USB_COMM));
+		tcpm_set_partner_usb_comm_capable(port,
+						  !!(port->source_caps[0] & PDO_FIXED_USB_COMM));
 		port->hard_reset_count = 0;
 		ret = tcpm_pd_send_request(port);
 		if (ret < 0) {
@@ -3568,9 +4378,9 @@ static void run_state_machine(struct tcpm_port *port)
 		 * For now, this driver only supports SOP for DISCOVER_IDENTITY, thus using
 		 * port->explicit_contract.
 		 */
-//		if (port->explicit_contract)
-//			mod_send_discover_delayed_work(port, 0);
-//		else
+		if (port->explicit_contract)
+			mod_send_discover_delayed_work(port, 0);
+		else
 			port->send_discover = false;
 
 		//power_supply_changed(port->psy);
@@ -3606,7 +4416,7 @@ static void run_state_machine(struct tcpm_port *port)
 		port->sink_cap_done = false;
 		port->hard_reset_count++;
 		port->tcpc->set_pd_rx(port->tcpc, false);
-		//tcpm_unregister_altmodes(port);
+		tcpm_unregister_altmodes(port);
 		port->nr_sink_caps = 0;
 		port->send_discover = true;
 		if (port->pwr_role == TYPEC_SOURCE)
@@ -3753,8 +4563,9 @@ static void run_state_machine(struct tcpm_port *port)
 		tcpm_set_state(port, ready_state(port), 0);
 		break;
 	case DR_SWAP_CHANGE_DR:
+		if (port->partner_altmode[0] != NULL)
+			tcpm_unregister_altmodes(port);
 		if (port->data_role == TYPEC_HOST) {
-			//tcpm_unregister_altmodes(port);
 			tcpm_set_roles(port, true, port->pwr_role,
 				       TYPEC_DEVICE);
 		} else {
@@ -4539,6 +5350,218 @@ void tcpm_pd_hard_reset(struct tcpm_port *port)
 EXPORT_SYMBOL_GPL(tcpm_pd_hard_reset);
 //5395
 
+//5447
+static void tcpm_send_discover_work(struct kthread_work *work)
+{
+	struct tcpm_port *port = container_of(work, struct tcpm_port, send_discover_work);
+
+	mutex_lock(&port->lock);
+	/* No need to send DISCOVER_IDENTITY anymore */
+	if (!port->send_discover)
+		goto unlock;
+
+	if (port->data_role == TYPEC_DEVICE && port->negotiated_rev < PD_REV30) {
+		port->send_discover = false;
+		goto unlock;
+	}
+
+	/* Retry if the port is not idle */
+	if ((port->state != SRC_READY && port->state != SNK_READY) || port->vdm_sm_running) {
+		mod_send_discover_delayed_work(port, SEND_DISCOVER_RETRY_MS);
+		goto unlock;
+	}
+
+	tcpm_send_vdm(port, USB_SID_PD, CMD_DISCOVER_IDENT, NULL, 0);
+
+unlock:
+	mutex_unlock(&port->lock);
+}
+
+static int tcpm_dr_set(struct typec_port *p, enum typec_data_role data)
+{
+	struct tcpm_port *port = typec_get_drvdata(p);
+	int ret;
+
+	mutex_lock(&port->swap_lock);
+	mutex_lock(&port->lock);
+
+	if (port->typec_caps.data != TYPEC_PORT_DRD) {
+		ret = -EINVAL;
+		goto port_unlock;
+	}
+	if (port->state != SRC_READY && port->state != SNK_READY) {
+		ret = -EAGAIN;
+		goto port_unlock;
+	}
+
+	if (port->data_role == data) {
+		ret = 0;
+		goto port_unlock;
+	}
+
+	/*
+	 * XXX
+	 * 6.3.9: If an alternate mode is active, a request to swap
+	 * alternate modes shall trigger a port reset.
+	 * Reject data role swap request in this case.
+	 */
+
+	if (!port->pd_capable) {
+		/*
+		 * If the partner is not PD capable, reset the port to
+		 * trigger a role change. This can only work if a preferred
+		 * role is configured, and if it matches the requested role.
+		 */
+		if (port->try_role == TYPEC_NO_PREFERRED_ROLE ||
+		    port->try_role == port->pwr_role) {
+			ret = -EINVAL;
+			goto port_unlock;
+		}
+		port->non_pd_role_swap = true;
+		tcpm_set_state(port, PORT_RESET, 0);
+	} else {
+		port->upcoming_state = DR_SWAP_SEND;
+		ret = tcpm_ams_start(port, DATA_ROLE_SWAP);
+		if (ret == -EAGAIN) {
+			port->upcoming_state = INVALID_STATE;
+			goto port_unlock;
+		}
+	}
+
+	port->swap_status = 0;
+	port->swap_pending = true;
+	reinit_completion(&port->swap_complete);
+	mutex_unlock(&port->lock);
+
+	if (!wait_for_completion_timeout(&port->swap_complete,
+				msecs_to_jiffies(PD_ROLE_SWAP_TIMEOUT)))
+		ret = -ETIMEDOUT;
+	else
+		ret = port->swap_status;
+
+	port->non_pd_role_swap = false;
+	goto swap_unlock;
+
+port_unlock:
+	mutex_unlock(&port->lock);
+swap_unlock:
+	mutex_unlock(&port->swap_lock);
+	return ret;
+}
+
+static int tcpm_pr_set(struct typec_port *p, enum typec_role role)
+{
+	struct tcpm_port *port = typec_get_drvdata(p);
+	int ret;
+
+	mutex_lock(&port->swap_lock);
+	mutex_lock(&port->lock);
+
+	if (port->port_type != TYPEC_PORT_DRP) {
+		ret = -EINVAL;
+		goto port_unlock;
+	}
+	if (port->state != SRC_READY && port->state != SNK_READY) {
+		ret = -EAGAIN;
+		goto port_unlock;
+	}
+
+	if (role == port->pwr_role) {
+		ret = 0;
+		goto port_unlock;
+	}
+
+	port->upcoming_state = PR_SWAP_SEND;
+	ret = tcpm_ams_start(port, POWER_ROLE_SWAP);
+	if (ret == -EAGAIN) {
+		port->upcoming_state = INVALID_STATE;
+		goto port_unlock;
+	}
+
+	port->swap_status = 0;
+	port->swap_pending = true;
+	reinit_completion(&port->swap_complete);
+	mutex_unlock(&port->lock);
+
+	if (!wait_for_completion_timeout(&port->swap_complete,
+				msecs_to_jiffies(PD_ROLE_SWAP_TIMEOUT)))
+		ret = -ETIMEDOUT;
+	else
+		ret = port->swap_status;
+
+	goto swap_unlock;
+
+port_unlock:
+	mutex_unlock(&port->lock);
+swap_unlock:
+	mutex_unlock(&port->swap_lock);
+	return ret;
+}
+
+static int tcpm_vconn_set(struct typec_port *p, enum typec_role role)
+{
+	struct tcpm_port *port = typec_get_drvdata(p);
+	int ret;
+
+	mutex_lock(&port->swap_lock);
+	mutex_lock(&port->lock);
+
+	if (port->state != SRC_READY && port->state != SNK_READY) {
+		ret = -EAGAIN;
+		goto port_unlock;
+	}
+
+	if (role == port->vconn_role) {
+		ret = 0;
+		goto port_unlock;
+	}
+
+	port->upcoming_state = VCONN_SWAP_SEND;
+	ret = tcpm_ams_start(port, VCONN_SWAP);
+	if (ret == -EAGAIN) {
+		port->upcoming_state = INVALID_STATE;
+		goto port_unlock;
+	}
+
+	port->swap_status = 0;
+	port->swap_pending = true;
+	reinit_completion(&port->swap_complete);
+	mutex_unlock(&port->lock);
+
+	if (!wait_for_completion_timeout(&port->swap_complete,
+				msecs_to_jiffies(PD_ROLE_SWAP_TIMEOUT)))
+		ret = -ETIMEDOUT;
+	else
+		ret = port->swap_status;
+
+	goto swap_unlock;
+
+port_unlock:
+	mutex_unlock(&port->lock);
+swap_unlock:
+	mutex_unlock(&port->swap_lock);
+	return ret;
+}
+
+static int tcpm_try_role(struct typec_port *p, int role)
+{
+	struct tcpm_port *port = typec_get_drvdata(p);
+	struct tcpc_dev	*tcpc = port->tcpc;
+	int ret = 0;
+
+	mutex_lock(&port->lock);
+	if (tcpc->try_role)
+		ret = tcpc->try_role(tcpc, role);
+	if (!ret)
+		port->try_role = role;
+	port->try_src_count = 0;
+	port->try_snk_count = 0;
+	mutex_unlock(&port->lock);
+
+	return ret;
+}
+//5648
+
 //5838
 static void tcpm_init(struct tcpm_port *port)
 {
@@ -4585,13 +5608,43 @@ static void tcpm_init(struct tcpm_port *port)
 	 * otherwise. So do not try to be fancy and force a clean disconnect.
 	 */
 	tcpm_set_state(port, PORT_RESET, 0);
-	
-	//for test
-	//tcpm_start_toggling(port, TYPEC_CC_RP_DEF);
 }
-//5883
 
-//5920
+static int tcpm_port_type_set(struct typec_port *p, enum typec_port_type type)
+{
+	struct tcpm_port *port = typec_get_drvdata(p);
+
+	mutex_lock(&port->lock);
+	if (type == port->port_type)
+		goto port_unlock;
+
+	port->port_type = type;
+
+	if (!port->connected) {
+		tcpm_set_state(port, PORT_RESET, 0);
+	} else if (type == TYPEC_PORT_SNK) {
+		if (!(port->pwr_role == TYPEC_SINK &&
+		      port->data_role == TYPEC_DEVICE))
+			tcpm_set_state(port, PORT_RESET, 0);
+	} else if (type == TYPEC_PORT_SRC) {
+		if (!(port->pwr_role == TYPEC_SOURCE &&
+		      port->data_role == TYPEC_HOST))
+			tcpm_set_state(port, PORT_RESET, 0);
+	}
+
+port_unlock:
+	mutex_unlock(&port->lock);
+	return 0;
+}
+
+static const struct typec_operations tcpm_ops = {
+	.try_role = tcpm_try_role,
+	.dr_set = tcpm_dr_set,
+	.pr_set = tcpm_pr_set,
+	.vconn_set = tcpm_vconn_set,
+	.port_type_set = tcpm_port_type_set
+};
+
 void tcpm_tcpc_reset(struct tcpm_port *port)
 {
 	mutex_lock(&port->lock);
@@ -4600,6 +5653,61 @@ void tcpm_tcpc_reset(struct tcpm_port *port)
 	mutex_unlock(&port->lock);
 }
 EXPORT_SYMBOL_GPL(tcpm_tcpc_reset);
+
+static int tcpm_fw_get_caps_late(struct tcpm_port *port,
+			    struct fwnode_handle *fwnode)
+{
+	int ret, i;
+	ret = fwnode_property_read_u32_array(fwnode, "typec-altmodes", NULL, 0);
+	if (ret > 0) {
+		u32 *props;
+		if (ret % 4) {
+			dev_err(port->dev, "Length of typec altmode array must be divisible by 4");
+			return -EINVAL;
+		}
+
+		props = devm_kzalloc(port->dev, sizeof(u32) * ret, GFP_KERNEL);
+		if (!props) {
+			dev_err(port->dev, "Failed to allocate memory for altmode properties");
+			return -ENOMEM;
+		}
+
+		if(fwnode_property_read_u32_array(fwnode, "typec-altmodes", props, ret) < 0) {
+			dev_err(port->dev, "Failed to read altmodes from port");
+			return -EINVAL;
+		}
+
+		i = 0;
+		while (ret > 0 && i < ARRAY_SIZE(port->port_altmode)) {
+			struct typec_altmode *alt;
+			struct typec_altmode_desc alt_desc = {
+				.svid = props[i * 4],
+				.mode = props[i * 4 + 1],
+				.vdo  = props[i * 4 + 2],
+				.roles = props[i * 4 + 3],
+			};
+
+
+			tcpm_log(port, "Adding altmode SVID: 0x%04x, mode: %d, vdo: %u, role: %d",
+				alt_desc.svid, alt_desc.mode, alt_desc.vdo, alt_desc.roles);
+			alt = typec_port_register_altmode(port->typec_port,
+							  &alt_desc);
+			if (IS_ERR(alt)) {
+				tcpm_log(port,
+					 "%s: failed to register port alternate mode 0x%x",
+					 dev_name(port->dev), alt_desc.svid);
+				break;
+			}
+			typec_altmode_set_drvdata(alt, port);
+			alt->ops = &tcpm_altmode_ops;
+			port->port_altmode[i] = alt;
+			i++;
+			ret -= 4;
+		}
+	}
+	return 0;
+}
+
 
 static int tcpm_fw_get_caps(struct tcpm_port *port,
 			    struct fwnode_handle *fwnode)
@@ -4755,9 +5863,25 @@ static enum hrtimer_restart state_machine_timer_handler(struct hrtimer *timer)
 		queue_kthread_work(&port->kworker, &port->state_machine);
 	return HRTIMER_NORESTART;
 }
-//6306
 
-//6335
+static enum hrtimer_restart vdm_state_machine_timer_handler(struct hrtimer *timer)
+{
+	struct tcpm_port *port = container_of(timer, struct tcpm_port, vdm_state_machine_timer);
+
+	if (port->registered)
+		queue_kthread_work(&port->kworker, &port->vdm_state_machine);
+	return HRTIMER_NORESTART;
+}
+
+static enum hrtimer_restart send_discover_timer_handler(struct hrtimer *timer)
+{
+	struct tcpm_port *port = container_of(timer, struct tcpm_port, send_discover_timer);
+
+	if (port->registered)
+		queue_kthread_work(&port->kworker, &port->send_discover_work);
+	return HRTIMER_NORESTART;
+}
+
 struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 {
 	struct tcpm_port *port;
@@ -4791,15 +5915,15 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 	sched_setscheduler(port->kworker_task, SCHED_FIFO, &param);
 
 	init_kthread_work(&port->state_machine, tcpm_state_machine_work);
-	//init_kthread_work(&port->vdm_state_machine, vdm_state_machine_work);
+	init_kthread_work(&port->vdm_state_machine, vdm_state_machine_work);
 	init_kthread_work(&port->event_work, tcpm_pd_event_handler);
-	//init_kthread_work(&port->send_discover_work, tcpm_send_discover_work);
+	init_kthread_work(&port->send_discover_work, tcpm_send_discover_work);
 	hrtimer_init(&port->state_machine_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	port->state_machine_timer.function = state_machine_timer_handler;
-	//hrtimer_init(&port->vdm_state_machine_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	//port->vdm_state_machine_timer.function = vdm_state_machine_timer_handler;
-	//hrtimer_init(&port->send_discover_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	//port->send_discover_timer.function = send_discover_timer_handler;
+	hrtimer_init(&port->vdm_state_machine_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	port->vdm_state_machine_timer.function = vdm_state_machine_timer_handler;
+	hrtimer_init(&port->send_discover_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	port->send_discover_timer.function = send_discover_timer_handler;
 
 	spin_lock_init(&port->pd_event_lock);
 
@@ -4819,7 +5943,7 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 	port->typec_caps.pd_revision = 0x0300;	/* USB-PD spec release 3.0 */
 	port->typec_caps.svdm_version = SVDM_VER_2_0;
 	port->typec_caps.driver_data = port;
-	//port->typec_caps.ops = &tcpm_ops;
+	port->typec_caps.ops = &tcpm_ops;
 	port->typec_caps.orientation_aware = 1;
 
 	port->partner_desc.identity = &port->partner_ident;
@@ -4836,15 +5960,20 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 	//	goto out_role_sw_put;
 	//power_supply_changed(port->psy);
 
-	//port->typec_port = typec_register_port(port->dev, &port->typec_caps);
-	//if (IS_ERR(port->typec_port)) {
-	//	err = PTR_ERR(port->typec_port);
-	//	goto out_role_sw_put;
-	//}
+	port->typec_port = typec_register_port(port->dev, &port->typec_caps);
+	if (IS_ERR(port->typec_port)) {
+		err = PTR_ERR(port->typec_port);
+		goto out_role_sw_put;
+	}
 
 	//typec_port_register_altmodes(port->typec_port,
 	//			     &tcpm_altmode_ops, port,
 	//			     port->port_altmode, ALTMODE_DISCOVERY_MAX);
+	// replace to tcpm_fw_get_caps_late
+	err = tcpm_fw_get_caps_late(port, tcpc->fwnode);
+	if (err < 0) {
+		dev_err(dev, "Failed to get altmodes from fwnode");
+	}
 	port->registered = true;
 
 	mutex_lock(&port->lock);
@@ -4854,7 +5983,7 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 	tcpm_log(port, "%s: registered", dev_name(dev));
 	return port;
 
-//out_role_sw_put:
+out_role_sw_put:
 	//usb_role_switch_put(port->role_sw);
 out_destroy_wq:
 	tcpm_debugfs_exit(port);
@@ -4865,19 +5994,19 @@ EXPORT_SYMBOL_GPL(tcpm_register_port);
 
 void tcpm_unregister_port(struct tcpm_port *port)
 {
-	//int i;
+	int i;
 
 	port->registered = false;
 	kthread_stop(port->kworker_task);
 
-	//hrtimer_cancel(&port->send_discover_timer);
-	//hrtimer_cancel(&port->vdm_state_machine_timer);
+	hrtimer_cancel(&port->send_discover_timer);
+	hrtimer_cancel(&port->vdm_state_machine_timer);
 	hrtimer_cancel(&port->state_machine_timer);
 
 	tcpm_reset_port(port);
-	//for (i = 0; i < ARRAY_SIZE(port->port_altmode); i++)
-	//	typec_unregister_altmode(port->port_altmode[i]);
-	//typec_unregister_port(port->typec_port);
+	for (i = 0; i < ARRAY_SIZE(port->port_altmode); i++)
+		typec_unregister_altmode(port->port_altmode[i]);
+	typec_unregister_port(port->typec_port);
 	//usb_role_switch_put(port->role_sw);
 	tcpm_debugfs_exit(port);
 }

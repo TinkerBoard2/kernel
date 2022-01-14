@@ -48,4 +48,6 @@ if TYPEC
 
 source "drivers/usb/typec/tcpm/Kconfig"
 
+source "drivers/usb/typec/altmodes/Kconfig"
+
 endif # TYPEC

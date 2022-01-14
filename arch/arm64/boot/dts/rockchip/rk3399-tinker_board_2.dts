@@ -403,10 +403,11 @@
 			label = "USB-C";
 			data-role = "dual";
 			power-role = "dual";
-			try-power-role = "sink";
+			try-power-role = "source";
 			source-pdos = <PDO_FIXED(5000, 500, PDO_FIXED_USB_COMM)>;
 			sink-pdos = <PDO_FIXED(5000, 500, PDO_FIXED_USB_COMM)>;
-			op-sink-microwatt = <5000000>;
+			op-sink-microwatt = <1000000>;
+			typec-altmodes = <0xff01 1 0x001c0c00 1>;
 		};
 	};
 };
