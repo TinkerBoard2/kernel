@@ -310,7 +310,7 @@ err_sgt_free:
 	kfree(sgt);
 err_dma_free:
 	dma_free_attrs(drm->dev, obj->size, rk_obj->kvaddr,
-		       rk_obj->dma_addr, rk_obj->dma_attrs);
+		       rk_obj->dma_handle, rk_obj->dma_attrs);
 
 	return ret;
 }
@@ -1040,29 +1040,13 @@ static int rockchip_gem_prime_sgl_sync_range(struct device *dev,
 	dma_addr_t sg_dma_addr;
 
 	for_each_sg(sgl, sg, nents, i) {
-		if (sg_dma_len(sg) == 0)
-			break;
-
-		if (i > 0) {
-			pr_warn_ratelimited("Partial cmo only supported with 1 segment\n"
-				"is dma_set_max_seg_size being set on dev:%s\n",
-				dev_name(dev));
-			return -EINVAL;
-		}
-	}
-
-	for_each_sg(sgl, sg, nents, i) {
 		unsigned int sg_offset, sg_left, size = 0;
 
-		if (i == 0)
-			sg_dma_addr = sg_dma_address(sg);
-
 		len += sg->length;
-		if (len <= offset) {
-			sg_dma_addr += sg->length;
+		if (len <= offset)
 			continue;
-		}
 
+		sg_dma_addr = sg_dma_address(sg);
 		sg_left = len - offset;
 		sg_offset = sg->length - sg_left;
 
@@ -1076,7 +1060,6 @@ static int rockchip_gem_prime_sgl_sync_range(struct device *dev,
 
 		offset += size;
 		length -= size;
-		sg_dma_addr += sg->length;
 
 		if (length == 0)
 			break;

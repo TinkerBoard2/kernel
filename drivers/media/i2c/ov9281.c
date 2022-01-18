@@ -66,6 +66,15 @@
 
 #define OV9281_REG_VTS			0x380e
 
+#define OV9281_AEC_STROBE_REG		0x3927
+#define OV9281_AEC_STROBE_REG_H		0x3927
+#define OV9281_AEC_STROBE_REG_L		0x3928
+
+#define OV9282_AEC_GROUP_UPDATE_ADDRESS		0x3208
+#define OV9282_AEC_GROUP_UPDATE_START_DATA	0x00
+#define OV9282_AEC_GROUP_UPDATE_END_DATA	0x10
+#define OV9282_AEC_GROUP_UPDATE_END_LAUNCH	0xA0
+
 #define REG_NULL			0xFFFF
 
 #define OV9281_REG_VALUE_08BIT		1
@@ -79,6 +88,32 @@
 #define OF_CAMERA_PINCTRL_STATE_SLEEP	"rockchip,camera_sleep"
 
 #define OV9281_NAME			"ov9281"
+
+
+//for SL
+#define OV9282_FPS		30
+#define OV9282_FLIP_ENABLE	1
+#define EXP_DEFAULT_TIME_US	3000
+#define OV9282_DEFAULT_GAIN	1
+
+#define OV9282_VTS_30_FPS	0xe48
+#define OV9282_HTS_30_FPS	0x2d8
+
+#define FPS_HTS_MODE		1
+#if FPS_HTS_MODE
+#define OV9282_VTS		OV9282_VTS_30_FPS
+#define OV9282_HTS		(OV9282_HTS_30_FPS * 30 / OV9282_FPS)
+#else
+#define OV9282_VTS		(OV9282_HTS_30_FPS * 30 / OV9282_FPS)
+#define OV9282_HTS		OV9282_VTS_30_FPS
+#endif
+
+#define TIME_MS			1000
+
+#define OV9282_EXP_TIME_REG	((uint16_t)(EXP_DEFAULT_TIME_US / 1000 * \
+				OV9282_FPS * OV9282_VTS / TIME_MS) << 4)
+#define OV9282_STROBE_TIME_REG	(OV9282_EXP_TIME_REG >> 4)
+
 
 static const char * const ov9281_supply_names[] = {
 	"avdd",		/* Analog power */
@@ -123,9 +158,13 @@ struct ov9281 {
 	struct v4l2_ctrl	*hblank;
 	struct v4l2_ctrl	*vblank;
 	struct v4l2_ctrl	*test_pattern;
+	struct v4l2_ctrl	*strobe;
 	struct mutex		mutex;
 	bool			streaming;
 	bool			power_on;
+	bool			is_thunderboot;
+	bool			is_thunderboot_ng;
+	bool			is_first_streamoff;
 	const struct ov9281_mode *cur_mode;
 	u32			module_index;
 	const char		*module_facing;
@@ -246,7 +285,146 @@ static const struct regval ov9281_1280x800_regs[] = {
 	{REG_NULL, 0x00},
 };
 
+
+static const struct regval ov9281_1280x800_30fps_regs[] = {
+	{0x0103, 0x01},/* software sleep */
+	{0x0100, 0x00},/* software reset */
+
+	/* use 20171222 strobe ok data ok */
+	{0x0302, 0x32},
+	{0x030d, 0x50},
+	{0x030e, 0x02},
+	{0x3001, 0x00},
+	{0x3004, 0x00},
+	{0x3005, 0x00},
+	{0x3011, 0x0a},
+	{0x3013, 0x18},
+	{0x3022, 0x01},
+	{0x3030, 0x10},
+	{0x3039, 0x32},
+	{0x303a, 0x00},
+	{0x3500, 0x00}, //exposure[19:16]
+	{0x3501, 0x2a}, //exposure[15:8]
+	{0x3502, 0x90}, //exposure[7:0]
+	{0x3503, 0x08}, //exposure change delay 1 frame,gain change select
+	{0x3505, 0x8c},
+	{0x3507, 0x03},
+	{0x3508, 0x00},
+	{0x3509, ((OV9282_DEFAULT_GAIN & 0x0f) << 4)}, //gain   (gain<<4)
+	{0x3610, 0x80},
+	{0x3611, 0xa0},
+	{0x3620, 0x6f},
+	{0x3632, 0x56},
+	{0x3633, 0x78},
+	{0x3662, 0x05},
+	{0x3666, 0x00},
+	{0x366f, 0x5a},
+	{0x3680, 0x84},
+	{0x3712, 0x80},
+	{0x372d, 0x22},
+	{0x3731, 0x80},
+	{0x3732, 0x30},
+	{0x3778, 0x00},
+	{0x377d, 0x22},
+	{0x3788, 0x02},
+	{0x3789, 0xa4},
+	{0x378a, 0x00},
+	{0x378b, 0x4a},
+	{0x3799, 0x20},
+	{0x3800, 0x00},
+	{0x3801, 0x00},
+	{0x3802, 0x00},
+	{0x3803, 0x00},
+	{0x3804, 0x05},
+	{0x3805, 0x0f},
+	{0x3806, 0x03},
+	{0x3807, 0x2f},
+	{0x3808, 0x05},
+	{0x3809, 0x00},
+	{0x380a, 0x03}, /* 1280x800 output */
+	{0x380b, 0x20},
+	{0x380c, (OV9282_HTS >> 8)},
+	{0x380d, (OV9282_HTS & 0xff)},
+
+	{0x380e, OV9282_VTS >> 8},
+	{0x380f, OV9282_VTS & 0xff},
+
+	{0x3810, 0x00},
+	{0x3811, 0x08},
+	{0x3812, 0x00},
+	{0x3813, 0x08}, /* 1280x800 v offset */
+	{0x3814, 0x11},
+	{0x3815, 0x11},
+#if OV9282_FLIP_ENABLE
+	{0x3820, 0x40},
+	{0x3821, 0x04},
+#else
+	{0x3820, 0x44},
+	{0x3821, 0x00},
+#endif
+	{0x3881, 0x42},
+	{0x38b1, 0x00},
+	{0x3920, 0xff},
+	{0x4003, 0x40},
+	{0x4008, 0x04},
+	{0x4009, 0x0b},
+	{0x400c, 0x00},
+	{0x400d, 0x07},
+	{0x4010, 0x40},
+	{0x4043, 0x40},
+	{0x4307, 0x30},
+	{0x4317, 0x00},
+	{0x4501, 0x00},
+	{0x4507, 0x00},
+	{0x4509, 0x00},
+	{0x450a, 0x08},
+	{0x4601, 0x04},
+	{0x470f, 0x00},
+	{0x4f07, 0x00},
+	{0x4800, 0x00},
+	{0x5000, 0x9f},
+	{0x5001, 0x00},
+	{0x5e00, 0x00},  //color bar
+	{0x5d00, 0x07},
+	{0x5d01, 0x00},
+	/* for vsync width 630us */
+	{0x4311, 0xc8},
+	{0x4312, 0x00},
+	//{0x0100, 0x01},
+
+	/* for strobe */
+	{0x3006, 0x0a},
+
+	/* exposure control */
+	{0x3500, 0x00},				//exposure[19:16]
+	{0x3501, OV9282_EXP_TIME_REG >> 8},	//exposure[15:8]
+	{0x3502, OV9282_EXP_TIME_REG & 0xff},	//exposure[7:0]  //low4 bit fraction bit
+
+	/* for strobe control */
+	//{0x3921,0x00},  //bit[7] shift direction, default 0 positive
+	{0x3924, 0x00},  //strobe shift[7:0]
+	{0x3925, 0x00},  //span[31:24]
+	{0x3926, 0x00},  //span[23:16]
+
+	{0x3927, OV9282_STROBE_TIME_REG >> 8},	//span[15:8]
+	{0x3928, OV9282_STROBE_TIME_REG & 0xff},//span[7:0]  exposure 0xa4
+	{REG_NULL, 0x00},
+};
+
 static const struct ov9281_mode supported_modes[] = {
+	{
+		.width = 1280,
+		.height = 800,
+		.max_fps = {
+			.numerator = 10000,
+			.denominator = 300000,
+		},
+		.exp_def = 0x0320,
+		.hts_def = 0x02d8,
+		.vts_def = 0x0e48,
+		.reg_list = ov9281_1280x800_30fps_regs,
+	},
+
 	{
 		.width = 1280,
 		.height = 800,
@@ -588,10 +766,11 @@ static int __ov9281_start_stream(struct ov9281 *ov9281)
 {
 	int ret;
 
-	ret = ov9281_write_array(ov9281->client, ov9281->cur_mode->reg_list);
-	if (ret)
-		return ret;
-
+	if (!ov9281->is_thunderboot) {
+		ret = ov9281_write_array(ov9281->client, ov9281->cur_mode->reg_list);
+		if (ret)
+			return ret;
+	}
 	/* In case these controls are set before streaming */
 	mutex_unlock(&ov9281->mutex);
 	ret = v4l2_ctrl_handler_setup(&ov9281->ctrl_handler);
@@ -605,6 +784,8 @@ static int __ov9281_start_stream(struct ov9281 *ov9281)
 
 static int __ov9281_stop_stream(struct ov9281 *ov9281)
 {
+	if (ov9281->is_thunderboot)
+		ov9281->is_first_streamoff = true;
 	return ov9281_write_reg(ov9281->client, OV9281_REG_CTRL_MODE,
 				OV9281_REG_VALUE_08BIT, OV9281_MODE_SW_STANDBY);
 }
@@ -694,6 +875,11 @@ static int __ov9281_power_on(struct ov9281 *ov9281)
 	u32 delay_us;
 	struct device *dev = &ov9281->client->dev;
 
+	/* No need when thunderboot. */
+	if (ov9281->is_thunderboot) {
+		return 0;
+	}
+
 	if (!IS_ERR_OR_NULL(ov9281->pins_default)) {
 		ret = pinctrl_select_state(ov9281->pinctrl,
 					   ov9281->pins_default);
@@ -744,6 +930,15 @@ static void __ov9281_power_off(struct ov9281 *ov9281)
 {
 	int ret;
 	struct device *dev = &ov9281->client->dev;
+
+	if (ov9281->is_thunderboot) {
+		if (ov9281->is_first_streamoff) {
+			ov9281->is_thunderboot = false;
+			ov9281->is_first_streamoff = false;
+		} else {
+			return;
+		}
+	}
 
 	if (!IS_ERR(ov9281->pwdn_gpio))
 		gpiod_set_value_cansleep(ov9281->pwdn_gpio, 0);
@@ -895,9 +1090,17 @@ static int ov9281_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_EXPOSURE:
+		ov9281_write_reg(ov9281->client, OV9282_AEC_GROUP_UPDATE_ADDRESS,
+				       OV9281_REG_VALUE_08BIT, OV9282_AEC_GROUP_UPDATE_START_DATA);
+
 		/* 4 least significant bits of expsoure are fractional part */
 		ret = ov9281_write_reg(ov9281->client, OV9281_REG_EXPOSURE,
 				       OV9281_REG_VALUE_24BIT, ctrl->val << 4);
+
+		ov9281_write_reg(ov9281->client, OV9282_AEC_GROUP_UPDATE_ADDRESS,
+				       OV9281_REG_VALUE_08BIT, OV9282_AEC_GROUP_UPDATE_END_DATA);
+		ov9281_write_reg(ov9281->client, OV9282_AEC_GROUP_UPDATE_ADDRESS,
+				       OV9281_REG_VALUE_08BIT, OV9282_AEC_GROUP_UPDATE_END_LAUNCH);
 		break;
 	case V4L2_CID_ANALOGUE_GAIN:
 		ret = ov9281_write_reg(ov9281->client, OV9281_REG_GAIN_H,
@@ -911,6 +1114,14 @@ static int ov9281_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = ov9281_write_reg(ov9281->client, OV9281_REG_VTS,
 				       OV9281_REG_VALUE_16BIT,
 				       ctrl->val + ov9281->cur_mode->height);
+		break;
+	case V4L2_CID_BRIGHTNESS:
+		ret = ov9281_write_reg(ov9281->client, OV9281_AEC_STROBE_REG_H,
+					   OV9281_REG_VALUE_08BIT,
+					   (ctrl->val >> 8) & 0xff);
+		ret |= ov9281_write_reg(ov9281->client, OV9281_AEC_STROBE_REG_L,
+					   OV9281_REG_VALUE_08BIT,
+					   ctrl->val & 0xff);
 		break;
 	case V4L2_CID_TEST_PATTERN:
 		ret = ov9281_enable_test_pattern(ov9281, ctrl->val);
@@ -977,6 +1188,11 @@ static int ov9281_initialize_controls(struct ov9281 *ov9281)
 				OV9281_GAIN_MAX, OV9281_GAIN_STEP,
 				OV9281_GAIN_DEFAULT);
 
+	ov9281->strobe = v4l2_ctrl_new_std(handler, &ov9281_ctrl_ops,
+				V4L2_CID_BRIGHTNESS, 1,
+				exposure_max/16, 1,
+				0xc8);
+
 	ov9281->test_pattern = v4l2_ctrl_new_std_menu_items(handler,
 				&ov9281_ctrl_ops, V4L2_CID_TEST_PATTERN,
 				ARRAY_SIZE(ov9281_test_pattern_menu) - 1,
@@ -1005,6 +1221,11 @@ static int ov9281_check_sensor_id(struct ov9281 *ov9281,
 	struct device *dev = &ov9281->client->dev;
 	u32 id = 0;
 	int ret;
+
+	if (ov9281->is_thunderboot) {
+		dev_info(dev, "Enable thunderboot mode, skip sensor id check\n");
+		return 0;
+	}
 
 	ret = ov9281_read_reg(client, OV9281_REG_CHIP_ID,
 			      OV9281_REG_VALUE_16BIT, &id);
@@ -1064,6 +1285,7 @@ static int ov9281_probe(struct i2c_client *client,
 
 	ov9281->client = client;
 	ov9281->cur_mode = &supported_modes[0];
+	ov9281->is_thunderboot = IS_ENABLED(CONFIG_VIDEO_ROCKCHIP_THUNDER_BOOT_ISP);
 
 	ov9281->xvclk = devm_clk_get(dev, "xvclk");
 	if (IS_ERR(ov9281->xvclk)) {
@@ -1071,11 +1293,11 @@ static int ov9281_probe(struct i2c_client *client,
 		return -EINVAL;
 	}
 
-	ov9281->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	ov9281->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
 	if (IS_ERR(ov9281->reset_gpio))
 		dev_warn(dev, "Failed to get reset-gpios\n");
 
-	ov9281->pwdn_gpio = devm_gpiod_get(dev, "pwdn", GPIOD_OUT_LOW);
+	ov9281->pwdn_gpio = devm_gpiod_get(dev, "pwdn", GPIOD_ASIS);
 	if (IS_ERR(ov9281->pwdn_gpio))
 		dev_warn(dev, "Failed to get pwdn-gpios\n");
 

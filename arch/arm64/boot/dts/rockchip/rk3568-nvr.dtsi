@@ -56,20 +56,6 @@
 		};
 	};
 
-	reserved-memory {
-		#address-cells = <2>;
-		#size-cells = <2>;
-		ranges;
-
-		rknpu_reserved: rknpu {
-			compatible = "shared-dma-pool";
-			inactive;
-			reusable;
-			size = <0x0 0x20000000>;
-			alignment = <0x0 0x1000>;
-		};
-	};
-
 	spdif-sound {
 		status = "okay";
 		compatible = "simple-audio-card";
@@ -177,6 +163,12 @@
 	};
 };
 
+&bus_npu {
+	bus-supply = <&vdd_logic>;
+	pvtm-supply = <&vdd_cpu>;
+	status = "okay";
+};
+
 &combphy0_us {
 	status = "okay";
 };
@@ -236,6 +228,7 @@
 };
 
 &hdmi {
+	skip-check-420-mode;
 	status = "okay";
 };
 
@@ -299,11 +292,11 @@
 	status = "okay";
 };
 
-&mipi_dphy0 {
+&video_phy0 {
 	status = "okay";
 };
 
-&mipi_dphy1 {
+&video_phy1 {
 	status = "okay";
 };
 
@@ -311,15 +304,15 @@
 	status = "okay";
 };
 
+/* Need to be modified according to the actual hardware */
 &pmu_io_domains {
 	status = "okay";
-	pmuio1-supply = <&vcc_3v3>;
 	pmuio2-supply = <&vcc_3v3>;
 	vccio1-supply = <&vcc_3v3>;
 	vccio3-supply = <&vcc_3v3>;
-	vccio4-supply = <&vcc_1v8>;
+	vccio4-supply = <&vcc_3v3>;
 	vccio5-supply = <&vcc_3v3>;
-	vccio6-supply = <&vcc_1v8>;
+	vccio6-supply = <&vcc_3v3>;
 	vccio7-supply = <&vcc_3v3>;
 };
 
@@ -338,13 +331,12 @@
 };
 
 &rknpu {
-	memory-region = <&rknpu_reserved>;
 	rknpu-supply = <&vdd_npu>;
 	status = "okay";
 };
 
 &rknpu_mmu {
-	status = "disabled";
+	status = "okay";
 };
 
 &rkvdec {

@@ -19,6 +19,167 @@ static int mi_frame_end(struct rkisp_stream *stream);
 static void rkisp_buf_queue(struct vb2_buffer *vb);
 static int rkisp_create_dummy_buf(struct rkisp_stream *stream);
 
+static const struct capture_fmt dmatx_fmts[] = {
+	/* raw */
+	{
+		.fourcc = V4L2_PIX_FMT_SRGGB8,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 8 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SGRBG8,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 8 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SGBRG8,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 8 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SBGGR8,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 8 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_GREY,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 8 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SRGGB10,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 10 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SGRBG10,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 10 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SGBRG10,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 10 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SBGGR10,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 10 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_Y10,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 10 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SRGGB12,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 12 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SGRBG12,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 12 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SGBRG12,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 12 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_SBGGR12,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 12 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_Y12,
+		.fmt_type = FMT_BAYER,
+		.bpp = { 12 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_YUYV,
+		.fmt_type = FMT_YUV,
+		.bpp = { 16 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_YVYU,
+		.fmt_type = FMT_YUV,
+		.bpp = { 16 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_UYVY,
+		.fmt_type = FMT_YUV,
+		.bpp = { 16 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4L2_PIX_FMT_VYUY,
+		.fmt_type = FMT_YUV,
+		.bpp = { 16 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4l2_PIX_FMT_EBD8,
+		.fmt_type = FMT_EBD,
+		.bpp = { 8 },
+		.mplanes = 1,
+	}, {
+		.fourcc = V4l2_PIX_FMT_SPD16,
+		.fmt_type = FMT_SPD,
+		.bpp = { 16 },
+		.mplanes = 1,
+	}
+};
+
+static struct stream_config rkisp2_dmatx0_stream_config = {
+	.fmts = dmatx_fmts,
+	.fmt_size = ARRAY_SIZE(dmatx_fmts),
+	.frame_end_id = MI_RAW0_WR_FRAME,
+	.mi = {
+		.y_size_init = MI_RAW0_WR_SIZE,
+		.y_base_ad_init = MI_RAW0_WR_BASE,
+		.y_base_ad_shd = MI_RAW0_WR_BASE_SHD,
+		.length = MI_RAW0_WR_LENGTH,
+	},
+	.dma = {
+		.ctrl = CSI2RX_RAW0_WR_CTRL,
+		.pic_size = CSI2RX_RAW0_WR_PIC_SIZE,
+		.pic_offs = CSI2RX_RAW0_WR_PIC_OFF,
+	},
+};
+
+static struct stream_config rkisp2_dmatx1_stream_config = {
+	.fmts = dmatx_fmts,
+	.fmt_size = ARRAY_SIZE(dmatx_fmts),
+	.frame_end_id = MI_RAW1_WR_FRAME,
+	.mi = {
+		.y_size_init = MI_RAW1_WR_SIZE,
+		.y_base_ad_init = MI_RAW1_WR_BASE,
+		.y_base_ad_shd = MI_RAW1_WR_BASE_SHD,
+		.length = MI_RAW1_WR_LENGTH,
+	},
+	.dma = {
+		.ctrl = CSI2RX_RAW1_WR_CTRL,
+		.pic_size = CSI2RX_RAW1_WR_PIC_SIZE,
+		.pic_offs = CSI2RX_RAW1_WR_PIC_OFF,
+	},
+};
+
+static struct stream_config rkisp2_dmatx3_stream_config = {
+	.fmts = dmatx_fmts,
+	.fmt_size = ARRAY_SIZE(dmatx_fmts),
+	.frame_end_id = MI_RAW3_WR_FRAME,
+	.mi = {
+		.y_size_init = MI_RAW3_WR_SIZE,
+		.y_base_ad_init = MI_RAW3_WR_BASE,
+		.y_base_ad_shd = MI_RAW3_WR_BASE_SHD,
+		.length = MI_RAW3_WR_LENGTH,
+	},
+	.dma = {
+		.ctrl = CSI2RX_RAW3_WR_CTRL,
+		.pic_size = CSI2RX_RAW3_WR_PIC_SIZE,
+		.pic_offs = CSI2RX_RAW3_WR_PIC_OFF,
+	},
+};
+
 static bool is_rdbk_stream(struct rkisp_stream *stream)
 {
 	struct rkisp_device *dev = stream->ispdev;
@@ -495,8 +656,10 @@ static void update_dmatx_v2(struct rkisp_stream *stream)
 			else
 				hdr_qbuf(&dev->hdr.q_tx[index], buf);
 		}
-		if (!buf && dev->hw_dev->dummy_buf.mem_priv)
+		if (!buf && dev->hw_dev->dummy_buf.mem_priv) {
 			buf = &dev->hw_dev->dummy_buf;
+			stream->dbg.frameloss++;
+		}
 		if (buf)
 			mi_set_y_addr(stream, buf->dma_addr);
 	}
@@ -535,6 +698,7 @@ static void update_mi(struct rkisp_stream *stream)
 			    dummy_buf->dma_addr, false);
 		rkisp_write(dev, stream->config->mi.cr_base_ad_init,
 			    dummy_buf->dma_addr, false);
+		stream->dbg.frameloss++;
 	}
 
 	mi_set_y_offset(stream, 0);
@@ -681,6 +845,7 @@ static void rdbk_frame_end(struct rkisp_stream *stream)
 	return;
 
 RDBK_FRM_UNMATCH:
+	stream->dbg.frameloss++;
 	if (cap->rdbk_buf[RDBK_L])
 		rkisp_buf_queue(&cap->rdbk_buf[RDBK_L]->vb.vb2_buf);
 	if (cap->rdbk_buf[RDBK_S])
@@ -970,7 +1135,7 @@ static void rkisp_buf_queue(struct vb2_buffer *vb)
 	memset(ispbuf->buff_addr, 0, sizeof(ispbuf->buff_addr));
 	for (i = 0; i < isp_fmt->mplanes; i++) {
 		vb2_plane_vaddr(vb, i);
-		if (stream->ispdev->hw_dev->is_mmu) {
+		if (stream->ispdev->hw_dev->is_dma_sg_ops) {
 			sgt = vb2_dma_sg_plane_desc(vb, i);
 			ispbuf->buff_addr[i] = sg_dma_address(sgt->sgl);
 		} else {
@@ -1158,6 +1323,7 @@ rkisp_start_streaming(struct vb2_queue *queue, unsigned int count)
 		return -EBUSY;
 	}
 
+	memset(&stream->dbg, 0, sizeof(stream->dbg));
 	atomic_inc(&dev->cap_dev.refcnt);
 	if (!dev->isp_inp || !stream->linked) {
 		v4l2_err(v4l2_dev, "check video link or isp input\n");

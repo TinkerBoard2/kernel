@@ -13,53 +13,22 @@
 	model = "Rockchip RK3568 EVB6 DDR3 V10 Board";
 	compatible = "rockchip,rk3568-evb6-ddr3-v10", "rockchip,rk3568";
 
-	pcie20_3v3: gpio-regulator {
-		compatible = "regulator-gpio";
-		regulator-name = "pcie20_3v3";
-		regulator-min-microvolt = <100000>;
-		regulator-max-microvolt = <3300000>;
-		gpios = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
-		gpios-states = <0x1>;
-		states = <100000 0x0
-			  3300000 0x1>;
-	};
-
-	pcie30_avdd0v9: pcie30-avdd0v9 {
-		compatible = "regulator-fixed";
-		regulator-name = "pcie30_avdd0v9";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <900000>;
-		regulator-max-microvolt = <900000>;
-		vin-supply = <&vcc3v3_sys>;
-	};
-
-	pcie30_avdd1v8: pcie30-avdd1v8 {
-		compatible = "regulator-fixed";
-		regulator-name = "pcie30_avdd1v8";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
-		vin-supply = <&vcc3v3_sys>;
-	};
-
-	pcie30_3v3: gpio-regulator {
-		compatible = "regulator-gpio";
-		regulator-name = "pcie30_3v3";
-		regulator-min-microvolt = <0100000>;
-		regulator-max-microvolt = <3300000>;
-		gpios = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
-		gpios-states = <0x1>;
-		states = <0100000 0x0
-			  3300000 0x1>;
-	};
-
 	rk_headset: rk-headset {
 		compatible = "rockchip_headset";
 		headset_gpio = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&hp_det>;
+	};
+
+	vcc3v3_pcie: gpio-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pcie";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <5000>;
+		vin-supply = <&dc_12v>;
 	};
 
 	vcc_camera: vcc-camera-regulator {
@@ -71,6 +40,13 @@
 		enable-active-high;
 		regulator-always-on;
 		regulator-boot-on;
+	};
+
+	ext_cam_clk: external-camera-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <25000000>;
+		clock-output-names = "CLK_CAMERA_25MHZ";
+		#clock-cells = <0>;
 	};
 };
 
@@ -87,29 +63,8 @@
 	status = "okay";
 };
 
-&dmc_opp_table {
-	opp-1056000000 {
-		opp-hz = /bits/ 64 <1056000000>;
-		opp-microvolt = <900000>;
-	};
-	/delete-node/ opp-1560000000;
-};
-
-&dmc {
-	system-status-freq = <
-		/*system status         freq(KHz)*/
-		SYS_STATUS_NORMAL       780000
-		SYS_STATUS_REBOOT       1056000
-		SYS_STATUS_SUSPEND      324000
-		SYS_STATUS_VIDEO_1080P  528000
-		SYS_STATUS_BOOST        1056000
-		SYS_STATUS_ISP          1056000
-		SYS_STATUS_PERFORMANCE  1056000
-	>;
-};
-
 /*
- * mipi_dphy0 needs to be enabled
+ * video_phy0 needs to be enabled
  * when dsi0 is enabled
  */
 &dsi0 {
@@ -129,7 +84,7 @@
 };
 
 /*
- * mipi_dphy1 needs to be enabled
+ * video_phy1 needs to be enabled
  * when dsi1 is enabled
  */
 &dsi1 {
@@ -173,6 +128,31 @@
 		type = <SENSOR_TYPE_ACCEL>;
 		power-off-in-suspend = <1>;
 		layout = <4>;
+	};
+
+	lt8619c: lt8619c@32 {
+		compatible = "lontium,lt8619c";
+		reg = <0x32>;
+		clocks = <&ext_cam_clk>;
+		clock-names = "xvclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cif_dvp_clk &cif_dvp_bus16 &cif_dvp_bus8>;
+		power-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio4 RK_PD2 GPIO_ACTIVE_LOW>;
+		plugin-det-gpios = <&gpio0 RK_PD6 GPIO_ACTIVE_LOW>;
+		hpd-output-inverted;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "LT8619C";
+		rockchip,camera-module-lens-name = "NC";
+
+		port {
+			lt8619c_out: endpoint {
+				remote-endpoint = <&cif_para_in>;
+				bus-width = <16>;
+				pclk-sample = <1>;
+			};
+		};
 	};
 };
 
@@ -319,11 +299,11 @@
 	};
 };
 
-&mipi_dphy0 {
+&video_phy0 {
 	status = "okay";
 };
 
-&mipi_dphy1 {
+&video_phy1 {
 	status = "disabled";
 };
 
@@ -333,21 +313,21 @@
 
 &pcie2x1 {
 	reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie20_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
 &pcie3x1 {
 	rockchip,bifurcation;
 	reset-gpios = <&gpio3 RK_PA1 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie30_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
 &pcie3x2 {
 	rockchip,bifurcation;
 	reset-gpios = <&gpio2 RK_PD6 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie30_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
@@ -507,4 +487,27 @@
 		compatible = "ethernet-phy-ieee802.3-c22";
 		reg = <0x0>;
 	};
+};
+
+&rkcif_dvp {
+	status = "okay";
+
+	port {
+		/* Parallel bus endpoint */
+		cif_para_in: endpoint {
+			remote-endpoint = <&lt8619c_out>;
+		};
+	};
+};
+
+&rkcif {
+	status = "okay";
+};
+
+&rkcif_mmu {
+	status = "okay";
+};
+
+&rkcif_dvp_sditf {
+	status = "okay";
 };

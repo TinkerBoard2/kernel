@@ -1543,6 +1543,7 @@ static void vop_crtc_atomic_disable(struct drm_crtc *crtc,
 	VOP_CTRL_SET(vop, reg_done_frm, 1);
 	VOP_CTRL_SET(vop, dsp_interlace, 0);
 	drm_crtc_vblank_off(crtc);
+	VOP_CTRL_SET(vop, out_mode, ROCKCHIP_OUT_MODE_P888);
 	VOP_CTRL_SET(vop, afbdc_en, 0);
 	vop_disable_all_planes(vop);
 
@@ -1766,10 +1767,11 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	struct drm_display_mode *mode = NULL;
 	struct vop_win *win = to_vop_win(plane);
 	struct vop_plane_state *vop_plane_state = to_vop_plane_state(state);
+	struct drm_display_mode *adjusted_mode = &crtc->state->adjusted_mode;
 	struct rockchip_crtc_state *s;
 	struct vop *vop = to_vop(state->crtc);
 	struct drm_framebuffer *fb = state->fb;
-	unsigned int actual_w, actual_h;
+	unsigned int actual_w, actual_h, dsp_w, dsp_h;
 	unsigned int dsp_stx, dsp_sty;
 	uint32_t act_info, dsp_info, dsp_st;
 	struct drm_rect *src = &vop_plane_state->src;
@@ -1822,10 +1824,30 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	mode = &crtc->state->adjusted_mode;
 	actual_w = drm_rect_width(src) >> 16;
 	actual_h = drm_rect_height(src) >> 16;
+
+	dsp_w = drm_rect_width(dest);
+	if (dest->x1 + dsp_w > adjusted_mode->hdisplay) {
+		DRM_ERROR("%s win%d dest->x1[%d] + dsp_w[%d] exceed mode hdisplay[%d]\n",
+			  crtc->name, win->win_id, dest->x1, dsp_w, adjusted_mode->hdisplay);
+		dsp_w = adjusted_mode->hdisplay - dest->x1;
+		if (dsp_w < 4)
+			dsp_w = 4;
+		actual_w = dsp_w * actual_w / drm_rect_width(dest);
+	}
+	dsp_h = drm_rect_height(dest);
+	if (dest->y1 + dsp_h > adjusted_mode->vdisplay) {
+		DRM_ERROR("%s win%d dest->y1[%d] + dsp_h[%d] exceed mode vdisplay[%d]\n",
+			  crtc->name, win->win_id, dest->y1, dsp_h, adjusted_mode->vdisplay);
+		dsp_h = adjusted_mode->vdisplay - dest->y1;
+		if (dsp_h < 4)
+			dsp_h = 4;
+		actual_h = dsp_h * actual_h / drm_rect_height(dest);
+	}
+
 	act_info = (actual_h - 1) << 16 | ((actual_w - 1) & 0xffff);
 
-	dsp_info = (drm_rect_height(dest) - 1) << 16;
-	dsp_info |= (drm_rect_width(dest) - 1) & 0xffff;
+	dsp_info = (dsp_h - 1) << 16;
+	dsp_info |= (dsp_w - 1) & 0xffff;
 
 	dsp_stx = dest->x1 + mode->crtc_htotal - mode->crtc_hsync_start;
 	dsp_sty = dest->y1 + mode->crtc_vtotal - mode->crtc_vsync_start;
@@ -1872,6 +1894,7 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	if ((is_alpha_support(fb->format->format) || global_alpha_en) &&
 	    (s->dsp_layer_sel & 0x3) != win->win_id) {
 		int src_blend_m0;
+		int pre_multi_alpha = ALPHA_SRC_PRE_MUL;
 
 		if (is_alpha_support(fb->format->format) && global_alpha_en)
 			src_blend_m0 = ALPHA_PER_PIX_GLOBAL;
@@ -1880,18 +1903,21 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 		else
 			src_blend_m0 = ALPHA_GLOBAL;
 
+
+		if (vop_plane_state->blend_mode == 0 || src_blend_m0 == ALPHA_GLOBAL)
+			pre_multi_alpha = ALPHA_SRC_NO_PRE_MUL;
+
 		VOP_WIN_SET(vop, win, dst_alpha_ctl,
 			    DST_FACTOR_M0(ALPHA_SRC_INVERSE));
-		val = SRC_ALPHA_EN(1) | SRC_COLOR_M0(ALPHA_SRC_PRE_MUL) |
+		val = SRC_ALPHA_EN(1) | SRC_COLOR_M0(pre_multi_alpha) |
 			SRC_ALPHA_M0(ALPHA_STRAIGHT) |
 			SRC_BLEND_M0(src_blend_m0) |
 			SRC_ALPHA_CAL_M0(ALPHA_SATURATION) |
 			SRC_FACTOR_M0(global_alpha_en ?
 				      ALPHA_SRC_GLOBAL : ALPHA_ONE);
 		VOP_WIN_SET(vop, win, src_alpha_ctl, val);
-		VOP_WIN_SET(vop, win, alpha_pre_mul,
-			    vop_plane_state->blend_mode);
-		VOP_WIN_SET(vop, win, alpha_mode, 1);
+		VOP_WIN_SET(vop, win, alpha_pre_mul, !pre_multi_alpha); /* VOP lite only */
+		VOP_WIN_SET(vop, win, alpha_mode, src_blend_m0); /* VOP lite only */
 		VOP_WIN_SET(vop, win, alpha_en, 1);
 	} else {
 		VOP_WIN_SET(vop, win, src_alpha_ctl, SRC_ALPHA_EN(0));
@@ -2724,14 +2750,41 @@ static void vop_crtc_close(struct drm_crtc *crtc)
 	mutex_unlock(&vop->vop_lock);
 }
 
+static u32 vop_mode_done(struct vop *vop)
+{
+	return VOP_CTRL_GET(vop, out_mode);
+}
+
+static void vop_set_out_mode(struct vop *vop, u32 mode)
+{
+	int ret;
+	u32 val;
+
+	VOP_CTRL_SET(vop, out_mode, mode);
+	vop_cfg_done(vop);
+	ret = readx_poll_timeout(vop_mode_done, vop, val, val == mode,
+				 1000, 500 * 1000);
+	if (ret)
+		dev_err(vop->dev, "wait mode 0x%x timeout\n", mode);
+
+}
+
 static void vop_crtc_send_mcu_cmd(struct drm_crtc *crtc,  u32 type, u32 value)
 {
+	struct rockchip_crtc_state *state;
 	struct vop *vop = NULL;
 
 	if (!crtc)
 		return;
 
 	vop = to_vop(crtc);
+	state = to_rockchip_crtc_state(crtc->state);
+
+	/*
+	 * set output mode to P888 when start send cmd.
+	 */
+	if ((type == MCU_SETBYPASS) && value)
+		vop_set_out_mode(vop, ROCKCHIP_OUT_MODE_P888);
 	mutex_lock(&vop->vop_lock);
 	if (vop && vop->is_enabled) {
 		switch (type) {
@@ -2752,6 +2805,12 @@ static void vop_crtc_send_mcu_cmd(struct drm_crtc *crtc,  u32 type, u32 value)
 		}
 	}
 	mutex_unlock(&vop->vop_lock);
+
+	/*
+	 * restore output mode at the end
+	 */
+	if ((type == MCU_SETBYPASS) && !value)
+		vop_set_out_mode(vop, state->output_mode);
 }
 
 static const struct rockchip_crtc_funcs private_crtc_funcs = {

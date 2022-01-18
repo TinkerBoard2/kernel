@@ -19,6 +19,8 @@
 
 #include "sdhci-pltfm.h"
 
+#define SDHCI_DWCMSHC_ARG2_STUFF	GENMASK(31, 16)
+
 /* DWCMSHC specific Mode Select value */
 #define DWCMSHC_CTRL_HS400		0x7
 
@@ -39,7 +41,7 @@
 #define DWCMSHC_EMMC_DLL_START_POINT	16
 #define DWCMSHC_EMMC_DLL_INC		8
 #define DWCMSHC_EMMC_DLL_DLYENA		BIT(27)
-#define DLL_TXCLK_TAPNUM_DEFAULT	0x8
+#define DLL_TXCLK_TAPNUM_DEFAULT	0x10
 #define DLL_STRBIN_TAPNUM_DEFAULT	0x8
 #define DLL_TXCLK_TAPNUM_FROM_SW	BIT(24)
 #define DLL_STRBIN_TAPNUM_FROM_SW	BIT(24)
@@ -86,6 +88,29 @@ static void dwcmshc_adma_write_desc(struct sdhci_host *host, void **desc,
 	addr += tmplen;
 	len -= tmplen;
 	sdhci_adma_write_desc(host, desc, addr, len, cmd);
+}
+
+static void dwcmshc_check_auto_cmd23(struct mmc_host *mmc,
+				     struct mmc_request *mrq)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+
+	/*
+	 * No matter V4 is enabled or not, ARGUMENT2 register is 32-bit
+	 * block count register which doesn't support stuff bits of
+	 * CMD23 argument on dwcmsch host controller.
+	 */
+	if (mrq->sbc && (mrq->sbc->arg & SDHCI_DWCMSHC_ARG2_STUFF))
+		host->flags &= ~SDHCI_AUTO_CMD23;
+	else
+		host->flags |= SDHCI_AUTO_CMD23;
+}
+
+static void dwcmshc_request(struct mmc_host *mmc, struct mmc_request *mrq)
+{
+	dwcmshc_check_auto_cmd23(mmc, mrq);
+
+	sdhci_request(mmc, mrq);
 }
 
 static void dwcmshc_set_uhs_signaling(struct sdhci_host *host,
@@ -157,7 +182,7 @@ static void dwcmshc_rk_set_clock(struct sdhci_host *host, unsigned int clock)
 	extra &= ~BIT(0);
 	sdhci_writel(host, extra, DWCMSHC_HOST_CTRL3);
 
-	if (clock <= 400000) {
+	if (clock <= 52000000) {
 		/* Disable DLL and reset both of sample and drive clock */
 		sdhci_writel(host, 0, DWCMSHC_EMMC_DLL_CTRL);
 		sdhci_writel(host, 0, DWCMSHC_EMMC_DLL_RXCLK);
@@ -233,6 +258,7 @@ static const struct sdhci_ops sdhci_dwcmshc_rk_ops = {
 static const struct sdhci_pltfm_data sdhci_dwcmshc_pdata = {
 	.ops = &sdhci_dwcmshc_ops,
 	.quirks = SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN,
+	.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN,
 };
 
 static const struct sdhci_pltfm_data sdhci_dwcmshc_rk_pdata = {
@@ -272,6 +298,16 @@ static int rockchip_pltf_init(struct sdhci_host *host, struct dwcmshc_priv *priv
 	/* Reset previous settings */
 	sdhci_writel(host, 0, DWCMSHC_EMMC_DLL_TXCLK);
 	sdhci_writel(host, 0, DWCMSHC_EMMC_DLL_STRBIN);
+
+	/*
+	 * Don't support highspeed bus mode with low clk speed as we
+	 * cannot use DLL for this condition.
+	 */
+	if (host->mmc->f_max <= 52000000) {
+		host->mmc->caps2 &= ~(MMC_CAP2_HS200 | MMC_CAP2_HS400);
+		host->mmc->caps &= ~(MMC_CAP_3_3V_DDR | MMC_CAP_1_8V_DDR);
+	}
+
 	return 0;
 }
 
@@ -341,15 +377,17 @@ static int dwcmshc_probe(struct platform_device *pdev)
 	host->mmc_host_ops.hs400_enhanced_strobe =
 		dwcmshc_hs400_enhanced_strobe;
 
+	host->mmc_host_ops.request = dwcmshc_request;
+
+	err = sdhci_add_host(host);
+	if (err)
+		goto err_clk;
+
 	if (pltfm_data == &sdhci_dwcmshc_rk_pdata) {
 		err = rockchip_pltf_init(host, priv);
 		if (err)
 			goto err_clk;
 	}
-
-	err = sdhci_add_host(host);
-	if (err)
-		goto err_clk;
 
 	pm_runtime_get_noresume(&pdev->dev);
 	pm_runtime_set_active(&pdev->dev);

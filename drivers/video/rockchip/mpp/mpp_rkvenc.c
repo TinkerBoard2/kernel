@@ -184,7 +184,7 @@ struct rkvenc_dev {
 	struct mpp_clk_info hclk_info;
 	struct mpp_clk_info core_clk_info;
 	u32 default_max_load;
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 	struct proc_dir_entry *procfs;
 #endif
 	struct reset_control *rst_a;
@@ -714,7 +714,7 @@ static int rkvenc_init_session(struct mpp_session *session)
 	return 0;
 }
 
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 static int rkvenc_procfs_remove(struct mpp_dev *mpp)
 {
 	struct rkvenc_dev *enc = to_rkvenc_dev(mpp);
@@ -961,13 +961,15 @@ static struct monitor_dev_profile enc_mdevp = {
 	.high_temp_adjust = rockchip_monitor_dev_high_temp_adjust,
 };
 
-static int rv1126_get_soc_info(struct device *dev, struct device_node *np,
-			       int *bin, int *process)
+static int __maybe_unused rv1126_get_soc_info(struct device *dev,
+					      struct device_node *np,
+					      int *bin, int *process)
 {
-	int ret = 0, value = -EINVAL;
+	int ret = 0;
+	u8 value = 0;
 
 	if (of_property_match_string(np, "nvmem-cell-names", "performance") >= 0) {
-		ret = rockchip_get_efuse_value(np, "performance", &value);
+		ret = rockchip_nvmem_cell_read_u8(np, "performance", &value);
 		if (ret) {
 			dev_err(dev, "Failed to get soc performance value\n");
 			return ret;
@@ -984,6 +986,7 @@ static int rv1126_get_soc_info(struct device *dev, struct device_node *np,
 }
 
 static const struct of_device_id rockchip_rkvenc_of_match[] = {
+#ifdef CONFIG_CPU_RV1126
 	{
 		.compatible = "rockchip,rv1109",
 		.data = (void *)&rv1126_get_soc_info,
@@ -992,6 +995,7 @@ static const struct of_device_id rockchip_rkvenc_of_match[] = {
 		.compatible = "rockchip,rv1126",
 		.data = (void *)&rv1126_get_soc_info,
 	},
+#endif
 	{},
 };
 

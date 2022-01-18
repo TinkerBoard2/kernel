@@ -4,6 +4,7 @@
 #include <media/videobuf2-dma-contig.h>
 #include <linux/delay.h>
 #include <linux/of_platform.h>
+#include <linux/slab.h>
 #include "dev.h"
 #include "regs.h"
 
@@ -86,7 +87,7 @@ int rkispp_allow_buffer(struct rkispp_device *dev,
 	}
 
 	buf->mem_priv = mem_priv;
-	if (dev->hw_dev->is_mmu) {
+	if (dev->hw_dev->is_dma_sg_ops) {
 		sg_tbl = (struct sg_table *)g_ops->cookie(mem_priv);
 		buf->dma_addr = sg_dma_address(sg_tbl->sgl);
 	} else {
@@ -271,6 +272,7 @@ static void rkispp_free_pool(struct rkispp_hw_dev *hw)
 			if (buf->mem_priv[j]) {
 				g_ops->unmap_dmabuf(buf->mem_priv[j]);
 				g_ops->detach_dmabuf(buf->mem_priv[j]);
+				dma_buf_put(buf->dbufs->dbuf[j]);
 				buf->mem_priv[j] = NULL;
 			}
 		}
@@ -312,17 +314,18 @@ static int rkispp_init_pool(struct rkispp_hw_dev *hw, struct rkisp_ispp_buf *dbu
 		ret = g_ops->map_dmabuf(mem);
 		if (ret)
 			goto err;
-		if (hw->is_mmu) {
+		if (hw->is_dma_sg_ops) {
 			sg_tbl = (struct sg_table *)g_ops->cookie(mem);
 			pool->dma[i] = sg_dma_address(sg_tbl->sgl);
 		} else {
 			pool->dma[i] = *((dma_addr_t *)g_ops->cookie(mem));
 		}
+		get_dma_buf(dbufs->dbuf[i]);
+		pool->vaddr[i] = g_ops->vaddr(mem);
 		if (rkispp_debug)
 			dev_info(hw->dev, "%s dma[%d]:0x%x\n",
 				 __func__, i, (u32)pool->dma[i]);
 
-		pool->vaddr[i] = g_ops->vaddr(mem);
 	}
 	rkispp_init_regbuf(hw);
 	hw->is_idle = true;

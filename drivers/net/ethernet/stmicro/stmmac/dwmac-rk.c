@@ -47,6 +47,7 @@ struct rk_gmac_ops {
 	void (*set_to_qsgmii)(struct rk_priv_data *bsp_priv);
 	void (*set_rgmii_speed)(struct rk_priv_data *bsp_priv, int speed);
 	void (*set_rmii_speed)(struct rk_priv_data *bsp_priv, int speed);
+	void (*set_sgmii_speed)(struct rk_priv_data *bsp_priv, int speed);
 	void (*integrated_phy_powerup)(struct rk_priv_data *bsp_priv);
 };
 
@@ -195,10 +196,10 @@ static int xpcs_setup(struct rk_priv_data *bsp_priv, int mode)
 				   SR_MII_CTRL_AN_ENABLE);
 		}
 	} else {
-		val = xpcs_read(bsp_priv, SR_MII_OFFSET(id) + VR_MII_DIG_CTRL1);
-		xpcs_write(bsp_priv, SR_MII_OFFSET(id) + VR_MII_DIG_CTRL1,
+		val = xpcs_read(bsp_priv, SR_MII_OFFSET(0) + VR_MII_DIG_CTRL1);
+		xpcs_write(bsp_priv, SR_MII_OFFSET(0) + VR_MII_DIG_CTRL1,
 			   val | MII_MAC_AUTO_SW);
-		xpcs_write(bsp_priv, SR_MII_OFFSET(id) + MII_BMCR,
+		xpcs_write(bsp_priv, SR_MII_OFFSET(0) + MII_BMCR,
 			   SR_MII_CTRL_AN_ENABLE);
 	}
 
@@ -1400,6 +1401,34 @@ static void rk3568_set_gmac_speed(struct rk_priv_data *bsp_priv, int speed)
 			__func__, rate, ret);
 }
 
+static void rk3568_set_gmac_sgmii_speed(struct rk_priv_data *bsp_priv, int speed)
+{
+	struct device *dev = &bsp_priv->pdev->dev;
+	unsigned int ctrl;
+
+	/* Only gmac1 set the speed for port1 */
+	if (!bsp_priv->bus_id)
+		return;
+
+	switch (speed) {
+	case 10:
+		ctrl = BMCR_SPEED10;
+		break;
+	case 100:
+		ctrl = BMCR_SPEED100;
+		break;
+	case 1000:
+		ctrl = BMCR_SPEED1000;
+		break;
+	default:
+		dev_err(dev, "unknown speed value for GMAC speed=%d", speed);
+		return;
+	}
+
+	xpcs_write(bsp_priv, SR_MII_OFFSET(bsp_priv->bus_id) + MII_BMCR,
+		   ctrl | BMCR_FULLDPLX);
+}
+
 static const struct rk_gmac_ops rk3568_ops = {
 	.set_to_rgmii = rk3568_set_to_rgmii,
 	.set_to_rmii = rk3568_set_to_rmii,
@@ -1407,6 +1436,7 @@ static const struct rk_gmac_ops rk3568_ops = {
 	.set_to_qsgmii = rk3568_set_to_qsgmii,
 	.set_rgmii_speed = rk3568_set_gmac_speed,
 	.set_rmii_speed = rk3568_set_gmac_speed,
+	.set_sgmii_speed = rk3568_set_gmac_sgmii_speed,
 };
 
 #define RV1108_GRF_GMAC_CON0		0X0900
@@ -2005,6 +2035,8 @@ static void rk_fix_speed(void *priv, unsigned int speed)
 			bsp_priv->ops->set_rmii_speed(bsp_priv, speed);
 		break;
 	case PHY_INTERFACE_MODE_SGMII:
+		if (bsp_priv->ops && bsp_priv->ops->set_sgmii_speed)
+			bsp_priv->ops->set_sgmii_speed(bsp_priv, speed);
 	case PHY_INTERFACE_MODE_QSGMII:
 		break;
 	default:
@@ -2194,19 +2226,45 @@ static int rk_gmac_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(rk_gmac_pm_ops, rk_gmac_suspend, rk_gmac_resume);
 
 static const struct of_device_id rk_gmac_dwmac_match[] = {
+#ifdef CONFIG_CPU_PX30
 	{ .compatible = "rockchip,px30-gmac",	.data = &px30_ops   },
+#endif
+#ifdef CONFIG_CPU_RK1808
 	{ .compatible = "rockchip,rk1808-gmac", .data = &rk1808_ops },
+#endif
+#ifdef CONFIG_CPU_RK312X
 	{ .compatible = "rockchip,rk3128-gmac", .data = &rk3128_ops },
+#endif
+#ifdef CONFIG_CPU_RK322X
 	{ .compatible = "rockchip,rk3228-gmac", .data = &rk3228_ops },
+#endif
+#ifdef CONFIG_CPU_RK3288
 	{ .compatible = "rockchip,rk3288-gmac", .data = &rk3288_ops },
+#endif
+#ifdef CONFIG_CPU_RK3308
 	{ .compatible = "rockchip,rk3308-mac",  .data = &rk3308_ops },
+#endif
+#ifdef CONFIG_CPU_RK3328
 	{ .compatible = "rockchip,rk3328-gmac", .data = &rk3328_ops },
+#endif
+#ifdef CONFIG_CPU_RK3366
 	{ .compatible = "rockchip,rk3366-gmac", .data = &rk3366_ops },
+#endif
+#ifdef CONFIG_CPU_RK3368
 	{ .compatible = "rockchip,rk3368-gmac", .data = &rk3368_ops },
+#endif
+#ifdef CONFIG_CPU_RK3399
 	{ .compatible = "rockchip,rk3399-gmac", .data = &rk3399_ops },
+#endif
+#ifdef CONFIG_CPU_RK3568
 	{ .compatible = "rockchip,rk3568-gmac", .data = &rk3568_ops },
+#endif
+#ifdef CONFIG_CPU_RV110X
 	{ .compatible = "rockchip,rv1108-gmac", .data = &rv1108_ops },
+#endif
+#ifdef CONFIG_CPU_RV1126
 	{ .compatible = "rockchip,rv1126-gmac", .data = &rv1126_ops },
+#endif
 	{ }
 };
 MODULE_DEVICE_TABLE(of, rk_gmac_dwmac_match);

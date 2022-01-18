@@ -25,6 +25,7 @@
 #include "mpp_debug.h"
 #include "mpp_common.h"
 #include "mpp_iommu.h"
+#include "hack/mpp_hack_px30.h"
 
 #define VDPU2_DRIVER_NAME		"mpp_vdpu2"
 
@@ -102,7 +103,7 @@ struct vdpu_dev {
 
 	struct mpp_clk_info aclk_info;
 	struct mpp_clk_info hclk_info;
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 	struct proc_dir_entry *procfs;
 #endif
 	struct reset_control *rst_a;
@@ -432,7 +433,7 @@ static int vdpu_free_task(struct mpp_session *session,
 	return 0;
 }
 
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 static int vdpu_procfs_remove(struct mpp_dev *mpp)
 {
 	struct vdpu_dev *dec = to_vdpu_dev(mpp);
@@ -665,10 +666,12 @@ static const struct of_device_id mpp_vdpu2_dt_match[] = {
 		.compatible = "rockchip,vpu-decoder-v2",
 		.data = &vdpu_v2_data,
 	},
+#ifdef CONFIG_CPU_PX30
 	{
 		.compatible = "rockchip,vpu-decoder-px30",
 		.data = &vdpu_px30_data,
 	},
+#endif
 	{},
 };
 

@@ -144,7 +144,7 @@ static int mpp_remove_service(struct mpp_service *srv)
 	return 0;
 }
 
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 static int mpp_procfs_remove(struct mpp_service *srv)
 {
 	if (srv->procfs) {
@@ -170,7 +170,7 @@ static int mpp_show_session_summary(struct seq_file *seq, void *offset)
 	mutex_lock(&srv->session_lock);
 	list_for_each_entry_safe(session, n,
 				 &srv->session_list,
-				 session_link) {
+				 service_link) {
 		struct  mpp_dev *mpp;
 
 		if (!session->priv)

@@ -62,15 +62,15 @@
 		vin-supply = <&vcc3v3_sys>;
 	};
 
-	pcie30_3v3: gpio-regulator {
-		compatible = "regulator-gpio";
-		regulator-name = "pcie30_3v3";
-		regulator-min-microvolt = <100000>;
+	vcc3v3_pcie: gpio-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pcie";
+		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		gpios = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
-		gpios-states = <0x1>;
-		states = <100000 0x0
-			  3300000 0x1>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <5000>;
+		vin-supply = <&dc_12v>;
 	};
 
 	vcc3v3_bu: vcc3v3-bu {
@@ -152,7 +152,7 @@
 };
 
 /*
- * mipi_dphy0 needs to be enabled
+ * video_phy0 needs to be enabled
  * when dsi0 is enabled
  */
 &dsi0 {
@@ -172,7 +172,7 @@
 };
 
 /*
- * mipi_dphy1 needs to be enabled
+ * video_phy1 needs to be enabled
  * when dsi1 is enabled
  */
 &dsi1 {
@@ -283,6 +283,7 @@
 		reset-gpios = <&gpio3 RK_PB6 GPIO_ACTIVE_LOW>;
 		pwdn-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;
 		rockchip,grf = <&grf>;
+		power-domains = <&power RK3568_PD_VI>;
 		rockchip,camera-module-index = <0>;
 		rockchip,camera-module-facing = "back";
 		rockchip,camera-module-name = "RK-CMK-8M-2-v1";
@@ -353,11 +354,11 @@
 	};
 };
 
-&mipi_dphy0 {
+&video_phy0 {
 	status = "okay";
 };
 
-&mipi_dphy1 {
+&video_phy1 {
 	status = "disabled";
 };
 
@@ -367,7 +368,7 @@
 
 &pcie3x2 {
 	reset-gpios = <&gpio2 RK_PD6 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie30_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 

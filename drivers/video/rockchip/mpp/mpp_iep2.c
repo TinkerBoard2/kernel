@@ -216,7 +216,7 @@ struct iep2_dev {
 	struct mpp_clk_info aclk_info;
 	struct mpp_clk_info hclk_info;
 	struct mpp_clk_info sclk_info;
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 	struct proc_dir_entry *procfs;
 #endif
 	struct reset_control *rst_a;
@@ -744,7 +744,7 @@ static int iep2_free_task(struct mpp_session *session,
 	return 0;
 }
 
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 static int iep2_procfs_remove(struct mpp_dev *mpp)
 {
 	struct iep2_dev *iep = to_iep2_dev(mpp);
@@ -918,10 +918,12 @@ static const struct of_device_id mpp_iep2_match[] = {
 		.compatible = "rockchip,iep-v2",
 		.data = &iep2_v2_data,
 	},
+#ifdef CONFIG_CPU_RV1126
 	{
 		.compatible = "rockchip,rv1126-iep",
 		.data = &iep2_v2_data,
 	},
+#endif
 	{},
 };
 

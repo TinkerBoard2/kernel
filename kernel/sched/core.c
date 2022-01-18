@@ -477,7 +477,11 @@ void resched_curr(struct rq *rq)
 		return;
 	}
 
+#ifdef CONFIG_PREEMPT
 	if (set_nr_and_not_polling(curr))
+#else
+	if (set_nr_and_not_polling(curr) && (rq->curr == rq->idle))
+#endif
 		smp_send_reschedule(cpu);
 	else
 		trace_sched_wake_idle_without_ipi(cpu);
@@ -757,7 +761,7 @@ static struct uclamp_se uclamp_default[UCLAMP_CNT];
 
 static inline unsigned int uclamp_bucket_id(unsigned int clamp_value)
 {
-	return clamp_value / UCLAMP_BUCKET_DELTA;
+	return min_t(unsigned int, clamp_value / UCLAMP_BUCKET_DELTA, UCLAMP_BUCKETS - 1);
 }
 
 static inline unsigned int uclamp_bucket_base_value(unsigned int clamp_value)

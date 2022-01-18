@@ -32,45 +32,25 @@
 		vin-supply = <&vcc3v3_sys>;
 	};
 
-	pcie20_3v3: gpio-regulator {
-		compatible = "regulator-gpio";
-		regulator-name = "pcie20_3v3";
-		regulator-min-microvolt = <100000>;
-		regulator-max-microvolt = <3300000>;
-		gpios = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
-		gpios-states = <0x1>;
-		states = <100000 0x0
-			  3300000 0x1>;
-	};
-
-	pcie30_avdd0v9: pcie30-avdd0v9 {
+	vcc3v3_pcie: gpio-regulator {
 		compatible = "regulator-fixed";
-		regulator-name = "pcie30_avdd0v9";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <900000>;
-		regulator-max-microvolt = <900000>;
-		vin-supply = <&vcc3v3_sys>;
-	};
-
-	pcie30_avdd1v8: pcie30-avdd1v8 {
-		compatible = "regulator-fixed";
-		regulator-name = "pcie30_avdd1v8";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
-		vin-supply = <&vcc3v3_sys>;
-	};
-
-	pcie30_3v3: gpio-regulator {
-		compatible = "regulator-gpio";
-		regulator-name = "pcie30_3v3";
-		regulator-min-microvolt = <100000>;
+		regulator-name = "vcc3v3_pcie";
+		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		gpios = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <5000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	qsgmii_3v3: gpio-regulator {
+		compatible = "regulator-gpio";
+		regulator-name = "qsgmii_3v3";
+		regulator-min-microvolt = <0100000>;
+		regulator-max-microvolt = <3300000>;
+		gpios = <&gpio0 RK_PB7 GPIO_ACTIVE_HIGH>;
 		gpios-states = <0x1>;
-		states = <100000 0x0
+		states = <0100000 0x0
 			  3300000 0x1>;
 	};
 
@@ -82,6 +62,13 @@
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
 		vin-supply = <&vcc5v0_sys>;
+	};
+
+	ext_cam_clk: external-camera-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <24000000>;
+		clock-output-names = "CLK_CAMERA_24MHZ";
+		#clock-cells = <0>;
 	};
 };
 
@@ -98,7 +85,7 @@
 };
 
 /*
- * mipi_dphy0 needs to be enabled
+ * video_phy0 needs to be enabled
  * when dsi0 is enabled
  */
 &dsi0 {
@@ -118,7 +105,7 @@
 };
 
 /*
- * mipi_dphy1 needs to be enabled
+ * video_phy1 needs to be enabled
  * when dsi1 is enabled
  */
 &dsi1 {
@@ -138,57 +125,39 @@
 };
 
 &gmac0 {
-	phy-mode = "rgmii";
-	clock_in_out = "output";
+	phy-supply = <&qsgmii_3v3>;
+	phy-mode = "qsgmii";
+	rockchip,xpcs = <&xpcs>;
 
-	snps,reset-gpio = <&gpio2 RK_PD3 GPIO_ACTIVE_LOW>;
-	snps,reset-active-low;
-	/* Reset time is 20ms, 100ms for rtl8211f */
-	snps,reset-delays-us = <0 20000 100000>;
+	assigned-clocks = <&cru SCLK_GMAC0_RX_TX>;
+	assigned-clock-parents = <&gmac0_xpcsclk>;
 
-	assigned-clocks = <&cru SCLK_GMAC0_RX_TX>, <&cru SCLK_GMAC0>;
-	assigned-clock-parents = <&cru SCLK_GMAC0_RGMII_SPEED>, <&cru CLK_MAC0_2TOP>;
-	assigned-clock-rates = <0>, <125000000>;
+	power-domains = <&power RK3568_PD_PIPE>;
+	phys = <&combphy1_usq PHY_TYPE_QSGMII>;
+	phy-handle = <&qsgmii_phy0>;
 
-	pinctrl-names = "default";
-	pinctrl-0 = <&gmac0_miim
-		     &gmac0_tx_bus2
-		     &gmac0_rx_bus2
-		     &gmac0_rgmii_clk
-		     &gmac0_rgmii_bus>;
-
-	tx_delay = <0x3c>;
-	rx_delay = <0x2f>;
-
-	phy-handle = <&rgmii_phy0>;
-	status = "disabled";
+	status = "okay";
 };
 
 &gmac1 {
-	phy-mode = "rgmii";
-	clock_in_out = "output";
+	phy-supply = <&qsgmii_3v3>;
+	phy-mode = "qsgmii";
 
-	snps,reset-gpio = <&gpio2 RK_PD1 GPIO_ACTIVE_LOW>;
+	snps,reset-gpio = <&gpio3 RK_PD5 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	/* Reset time is 20ms, 100ms for rtl8211f */
 	snps,reset-delays-us = <0 20000 100000>;
 
-	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
-	assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>, <&cru CLK_MAC1_2TOP>;
-	assigned-clock-rates = <0>, <125000000>;
+	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>;
+	assigned-clock-parents = <&gmac1_xpcsclk>;
 
 	pinctrl-names = "default";
-	pinctrl-0 = <&gmac1m1_miim
-		     &gmac1m1_tx_bus2
-		     &gmac1m1_rx_bus2
-		     &gmac1m1_rgmii_clk
-		     &gmac1m1_rgmii_bus>;
+	pinctrl-0 = <&gmac1m1_miim>;
 
-	tx_delay = <0x4f>;
-	rx_delay = <0x26>;
+	power-domains = <&power RK3568_PD_PIPE>;
+	phy-handle = <&qsgmii_phy1>;
 
-	phy-handle = <&rgmii_phy1>;
-	status = "disabled";
+	status = "okay";
 };
 
 /*
@@ -197,6 +166,35 @@
  */
 &gt1x {
 	power-supply = <&vcc3v3_lcd0_n>;
+};
+
+&i2c3 {
+	status = "okay";
+
+	lt6911uxc: lt6911uxc@2b {
+		status = "okay";
+		reg = <0x2b>;
+		compatible = "lontium,lt6911uxc";
+		clocks = <&ext_cam_clk>;
+		clock-names = "xvclk";
+		interrupt-parent = <&gpio4>;
+		interrupts = <16 IRQ_TYPE_LEVEL_LOW>;
+		power-gpios = <&gpio0 29 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio4 26 GPIO_ACTIVE_LOW>;
+		plugin-det-gpios = <&gpio0 30 GPIO_ACTIVE_LOW>;
+		hpd-ctl-gpios = <&gpio3 27 GPIO_ACTIVE_LOW>;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "LT6911UXC";
+		rockchip,camera-module-lens-name = "NC";
+
+		port {
+			lt6911uxc_out: endpoint {
+				remote-endpoint = <&hdmi_to_mipi_in>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
 };
 
 &i2c4 {
@@ -221,31 +219,36 @@
 	status = "disabled";
 };
 
-&mdio0 {
-	rgmii_phy0: phy@0 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <0x0>;
-	};
-};
-
 &mdio1 {
-	rgmii_phy1: phy@0 {
-		compatible = "ethernet-phy-ieee802.3-c22";
+	qsgmii_phy0: phy@0 {
+		compatible = "ethernet-phy-id001c.c942", "ethernet-phy-ieee802.3-c22";
 		reg = <0x0>;
+	};
+	qsgmii_phy1: phy@1 {
+		compatible = "ethernet-phy-id001c.c942", "ethernet-phy-ieee802.3-c22";
+		reg = <0x1>;
+	};
+	qsgmii_phy2: phy@2 {
+		compatible = "ethernet-phy-id001c.c942", "ethernet-phy-ieee802.3-c22";
+		reg = <0x2>;
+	};
+	qsgmii_phy3: phy@3 {
+		compatible = "ethernet-phy-id001c.c942", "ethernet-phy-ieee802.3-c22";
+		reg = <0x3>;
 	};
 };
 
-&mipi_dphy0 {
+&video_phy0 {
 	status = "okay";
 };
 
-&mipi_dphy1 {
+&video_phy1 {
 	status = "disabled";
 };
 
 &pcie2x1 {
 	reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie20_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
@@ -255,7 +258,7 @@
 
 &pcie3x2 {
 	reset-gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie30_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
@@ -486,5 +489,97 @@
 	BT,reset_gpio    = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
 	BT,wake_gpio     = <&gpio2 RK_PC1 GPIO_ACTIVE_HIGH>;
 	BT,wake_host_irq = <&gpio2 RK_PC0 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+};
+
+&xpcs {
+	status = "okay";
+};
+
+&csi2_dphy_hw {
+	status = "okay";
+};
+
+&csi2_dphy0 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			hdmi_to_mipi_in: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&lt6911uxc_out>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			csidphy_out: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&mipi_csi2_input>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};
+
+&mipi_csi2 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi_csi2_input: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&csidphy_out>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi_csi2_output: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&cif_mipi_in>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};
+
+&rkcif {
+	status = "okay";
+};
+
+&rkcif_mipi_lvds {
+	status = "okay";
+
+	port {
+		cif_mipi_in: endpoint {
+			remote-endpoint = <&mipi_csi2_output>;
+			data-lanes = <1 2 3 4>;
+		};
+	};
+};
+
+&rkcif_mmu {
 	status = "okay";
 };

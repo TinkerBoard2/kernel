@@ -100,10 +100,11 @@ void analogix_dp_init_analog_param(struct analogix_dp_device *dp)
 			reg ^= REF_CLK_MASK;
 
 		analogix_dp_write(dp, ANALOGIX_DP_PLL_REG_1, reg);
-		analogix_dp_write(dp, ANALOGIX_DP_PLL_REG_2, 0x95);
+		analogix_dp_write(dp, ANALOGIX_DP_PLL_REG_2, 0x99);
 		analogix_dp_write(dp, ANALOGIX_DP_PLL_REG_3, 0x40);
 		analogix_dp_write(dp, ANALOGIX_DP_PLL_REG_4, 0x58);
 		analogix_dp_write(dp, ANALOGIX_DP_PLL_REG_5, 0x22);
+		analogix_dp_write(dp, ANALOGIX_DP_BIAS, 0x44);
 	}
 
 	reg = DRIVE_DVDD_BIT_1_0625V | VCO_BIT_600_MICRO;
@@ -618,6 +619,32 @@ int analogix_dp_write_byte_to_dpcd(struct analogix_dp_device *dp,
 	return retval;
 }
 
+static void analogix_dp_ssc_enable(struct analogix_dp_device *dp)
+{
+	u32 reg;
+
+	/* 4500ppm */
+	writel(0x19, dp->reg_base + ANALOIGX_DP_SSC_REG);
+	/*
+	 * To apply updated SSC parameters into SSC operation,
+	 * firmware must disable and enable this bit.
+	 */
+	reg = readl(dp->reg_base + ANALOGIX_DP_FUNC_EN_2);
+	reg |= SSC_FUNC_EN_N;
+	writel(reg, dp->reg_base + ANALOGIX_DP_FUNC_EN_2);
+	reg &= ~SSC_FUNC_EN_N;
+	writel(reg, dp->reg_base + ANALOGIX_DP_FUNC_EN_2);
+}
+
+static void analogix_dp_ssc_disable(struct analogix_dp_device *dp)
+{
+	u32 reg;
+
+	reg = readl(dp->reg_base + ANALOGIX_DP_FUNC_EN_2);
+	reg |= SSC_FUNC_EN_N;
+	writel(reg, dp->reg_base + ANALOGIX_DP_FUNC_EN_2);
+}
+
 bool analogix_dp_ssc_supported(struct analogix_dp_device *dp)
 {
 	/* Check if SSC is supported by both sides */
@@ -626,12 +653,10 @@ bool analogix_dp_ssc_supported(struct analogix_dp_device *dp)
 
 void analogix_dp_set_link_bandwidth(struct analogix_dp_device *dp, u32 bwtype)
 {
-	u32 reg, status;
+	u32 status;
 	int ret;
 
-	reg = bwtype;
-	if ((bwtype == DP_LINK_BW_2_7) || (bwtype == DP_LINK_BW_1_62))
-		analogix_dp_write(dp, ANALOGIX_DP_LINK_BW_SET, reg);
+	analogix_dp_write(dp, ANALOGIX_DP_LINK_BW_SET, bwtype);
 
 	if (dp->phy) {
 		union phy_configure_opts phy_cfg;
@@ -648,6 +673,11 @@ void analogix_dp_set_link_bandwidth(struct analogix_dp_device *dp, u32 bwtype)
 				__func__, ret);
 			return;
 		}
+	} else {
+		if (analogix_dp_ssc_supported(dp))
+			analogix_dp_ssc_enable(dp);
+		else
+			analogix_dp_ssc_disable(dp);
 	}
 
 	ret = readx_poll_timeout(analogix_dp_get_pll_lock_status, dp, status,
@@ -779,6 +809,10 @@ void analogix_dp_set_training_pattern(struct analogix_dp_device *dp,
 		break;
 	case TRAINING_PTN2:
 		reg = SCRAMBLING_DISABLE | SW_TRAINING_PATTERN_SET_PTN2;
+		analogix_dp_write(dp, ANALOGIX_DP_TRAINING_PTN_SET, reg);
+		break;
+	case TRAINING_PTN3:
+		reg = SCRAMBLING_DISABLE | SW_TRAINING_PATTERN_SET_PTN3;
 		analogix_dp_write(dp, ANALOGIX_DP_TRAINING_PTN_SET, reg);
 		break;
 	case DP_NONE:

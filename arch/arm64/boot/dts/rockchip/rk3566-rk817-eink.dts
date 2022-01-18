@@ -714,7 +714,7 @@
 	status = "okay";
 };
 
-&mipi_dphy0 {
+&video_phy0 {
 	status = "disabled";
 };
 
@@ -783,12 +783,12 @@
 
 		soc_slppin_gpio: soc_slppin_gpio {
 			rockchip,pins =
-				<0 RK_PA2 RK_FUNC_GPIO &pcfg_output_low>;
+				<0 RK_PA2 RK_FUNC_GPIO &pcfg_output_low_pull_down>;
 		};
 
 		soc_slppin_slp: soc_slppin_slp {
 			rockchip,pins =
-				<0 RK_PA2 1 &pcfg_pull_none>;
+				<0 RK_PA2 1 &pcfg_pull_up>;
 		};
 
 		soc_slppin_rst: soc_slppin_rst {
@@ -868,7 +868,6 @@
 	supports-emmc;
 	non-removable;
 	keep-power-in-suspend;
-	rockchip,txclk-tapnum = <0x8>;
 	max-frequency = <200000000>;
 	status = "okay";
 };

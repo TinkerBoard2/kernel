@@ -23,6 +23,20 @@ menuconfig DRM
 	  details.  You should also select and configure AGP
 	  (/dev/agpgart) support if it is available for your platform.
 
+config DRM_DP
+	bool "DRM DisplayPort support"
+	depends on DRM_KMS_HELPER
+	default y if !ARCH_ROCKCHIP || DRM_ANALOGIX_DP
+	help
+	  Choose this option to support DP interface.
+
+config DRM_EDID
+	bool "EDID function for DRM"
+	depends on DRM
+	default y if !CPU_RV1126
+	help
+	  DRM EDID read and parse function.
+
 config DRM_IGNORE_IOTCL_PERMIT
 	bool "Ignore drm ioctl permission"
 	depends on DRM && ANDROID
@@ -196,6 +210,7 @@ source "drivers/gpu/drm/arm/Kconfig"
 config DRM_RADEON
 	tristate "ATI Radeon"
 	depends on DRM && PCI && MMU
+	depends on AGP || !AGP
 	select FW_LOADER
         select DRM_KMS_HELPER
         select DRM_TTM

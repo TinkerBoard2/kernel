@@ -37,6 +37,8 @@
 #include "mpp_common.h"
 #include "mpp_iommu.h"
 
+#include "hack/mpp_hack_px30.h"
+
 #define RKVDEC_DRIVER_NAME		"mpp_rkvdec"
 
 #define IOMMU_GET_BUS_ID(x)		(((x) >> 6) & 0x1f)
@@ -161,7 +163,7 @@ struct rkvdec_dev {
 	struct mpp_clk_info cabac_clk_info;
 	struct mpp_clk_info hevc_cabac_clk_info;
 	u32 default_max_load;
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 	struct proc_dir_entry *procfs;
 #endif
 	struct reset_control *rst_a;
@@ -1145,7 +1147,7 @@ static int rkvdec_free_task(struct mpp_session *session,
 	return 0;
 }
 
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_ROCKCHIP_MPP_PROC_FS
 static int rkvdec_procfs_remove(struct mpp_dev *mpp)
 {
 	struct rkvdec_dev *dec = to_rkvdec_dev(mpp);
@@ -1819,30 +1821,40 @@ static const struct of_device_id mpp_rkvdec_dt_match[] = {
 		.compatible = "rockchip,hevc-decoder",
 		.data = &rk_hevcdec_data,
 	},
+#ifdef CONFIG_CPU_PX30
 	{
 		.compatible = "rockchip,hevc-decoder-px30",
 		.data = &rk_hevcdec_px30_data,
 	},
+#endif
+#ifdef CONFIG_CPU_RK3368
 	{
 		.compatible = "rockchip,hevc-decoder-rk3368",
 		.data = &rk_hevcdec_3368_data,
 	},
+#endif
 	{
 		.compatible = "rockchip,rkv-decoder-v1",
 		.data = &rkvdec_v1_data,
 	},
+#ifdef CONFIG_CPU_RK3399
 	{
 		.compatible = "rockchip,rkv-decoder-rk3399",
 		.data = &rkvdec_3399_data,
 	},
+#endif
+#ifdef CONFIG_CPU_RK3328
 	{
 		.compatible = "rockchip,rkv-decoder-rk3328",
 		.data = &rkvdec_3328_data,
 	},
+#endif
+#ifdef CONFIG_CPU_RV1126
 	{
 		.compatible = "rockchip,rkv-decoder-rv1126",
 		.data = &rkvdec_1126_data,
 	},
+#endif
 	{},
 };
 

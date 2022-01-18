@@ -101,6 +101,7 @@ struct perf_dom_info {
 };
 
 struct scmi_perf_info {
+	u32 version;
 	int num_domains;
 	bool power_scale_mw;
 	u64 stats_addr;
@@ -151,7 +152,7 @@ scmi_perf_domain_attributes_get(const struct scmi_handle *handle, u32 domain,
 	if (ret)
 		return ret;
 
-	*(__le32 *)t->tx.buf = cpu_to_le32(domain);
+	put_unaligned_le32(domain, t->tx.buf);
 	attr = t->rx.buf;
 
 	ret = scmi_do_xfer(handle, t);
@@ -284,7 +285,7 @@ static int scmi_perf_limits_get(const struct scmi_handle *handle, u32 domain,
 	if (ret)
 		return ret;
 
-	*(__le32 *)t->tx.buf = cpu_to_le32(domain);
+	put_unaligned_le32(domain, t->tx.buf);
 
 	ret = scmi_do_xfer(handle, t);
 	if (!ret) {
@@ -333,11 +334,11 @@ static int scmi_perf_level_get(const struct scmi_handle *handle, u32 domain,
 		return ret;
 
 	t->hdr.poll_completion = poll;
-	*(__le32 *)t->tx.buf = cpu_to_le32(domain);
+	put_unaligned_le32(domain, t->tx.buf);
 
 	ret = scmi_do_xfer(handle, t);
 	if (!ret)
-		*level = le32_to_cpu(*(__le32 *)t->rx.buf);
+		*level = get_unaligned_le32(t->rx.buf);
 
 	scmi_xfer_put(handle, t);
 	return ret;
@@ -496,15 +497,11 @@ static int scmi_perf_protocol_init(struct scmi_handle *handle)
 		scmi_perf_describe_levels_get(handle, domain, dom);
 	}
 
+	pinfo->version = version;
 	handle->perf_ops = &perf_ops;
 	handle->perf_priv = pinfo;
 
 	return 0;
 }
 
-static int __init scmi_perf_init(void)
-{
-	return scmi_protocol_register(SCMI_PROTOCOL_PERF,
-				      &scmi_perf_protocol_init);
-}
-subsys_initcall(scmi_perf_init);
+DEFINE_SCMI_PROTOCOL_REGISTER_UNREGISTER(SCMI_PROTOCOL_PERF, perf)

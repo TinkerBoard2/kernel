@@ -1194,20 +1194,6 @@ static int set_machine_constraints(struct regulator_dev *rdev)
 		}
 	}
 
-	/* If the constraints say the regulator should be on at this point
-	 * and we have control then make sure it is enabled.
-	 */
-	if (rdev->constraints->always_on || rdev->constraints->boot_on) {
-		/* The regulator may on if it's not switchable or left on */
-		if (!_regulator_is_enabled(rdev)) {
-			ret = _regulator_do_enable(rdev);
-			if (ret < 0 && ret != -EINVAL) {
-				rdev_err(rdev, "failed to enable\n");
-				return ret;
-			}
-		}
-	}
-
 	if ((rdev->constraints->ramp_delay || rdev->constraints->ramp_disable)
 		&& ops->set_ramp_delay) {
 		ret = ops->set_ramp_delay(rdev, rdev->constraints->ramp_delay);
@@ -1251,6 +1237,32 @@ static int set_machine_constraints(struct regulator_dev *rdev)
 			rdev_err(rdev, "failed to set active discharge\n");
 			return ret;
 		}
+	}
+
+	/* If the constraints say the regulator should be on at this point
+	 * and we have control then make sure it is enabled.
+	 */
+	if (rdev->constraints->always_on || rdev->constraints->boot_on) {
+		if (rdev->supply && !_regulator_is_enabled(rdev->supply->rdev)) {
+			ret = regulator_enable(rdev->supply);
+			if (ret < 0) {
+				_regulator_put(rdev->supply);
+				rdev->supply = NULL;
+				return ret;
+			}
+		}
+
+		/* The regulator may on if it's not switchable or left on */
+		if (!_regulator_is_enabled(rdev)) {
+			ret = _regulator_do_enable(rdev);
+			if (ret < 0 && ret != -EINVAL) {
+				rdev_err(rdev, "failed to enable\n");
+				return ret;
+			}
+		}
+
+		if (rdev->constraints->always_on)
+			rdev->use_count++;
 	}
 
 	print_constraints(rdev);
@@ -1622,13 +1634,13 @@ static int regulator_resolve_supply(struct regulator_dev *rdev)
 {
 	struct regulator_dev *r;
 	struct device *dev = rdev->dev.parent;
-	int ret;
+	int ret = 0;
 
 	/* No supply to resovle? */
 	if (!rdev->supply_name)
 		return 0;
 
-	/* Supply already resolved? */
+	/* Supply already resolved? (fast-path without locking contention) */
 	if (rdev->supply)
 		return 0;
 
@@ -1638,7 +1650,7 @@ static int regulator_resolve_supply(struct regulator_dev *rdev)
 
 		/* Did the lookup explicitly defer for us? */
 		if (ret == -EPROBE_DEFER)
-			return ret;
+			goto out;
 
 		if (have_full_constraints()) {
 			r = dummy_regulator_rdev;
@@ -1646,15 +1658,18 @@ static int regulator_resolve_supply(struct regulator_dev *rdev)
 		} else {
 			dev_err(dev, "Failed to resolve %s-supply for %s\n",
 				rdev->supply_name, rdev->desc->name);
-			return -EPROBE_DEFER;
+			ret = -EPROBE_DEFER;
+			goto out;
 		}
 	}
 
 	if (r == rdev) {
 		dev_err(dev, "Supply for %s (%s) resolved to itself\n",
 			rdev->desc->name, rdev->supply_name);
-		if (!have_full_constraints())
-			return -EINVAL;
+		if (!have_full_constraints()) {
+			ret = -EINVAL;
+			goto out;
+		}
 		r = dummy_regulator_rdev;
 		get_device(&r->dev);
 	}
@@ -1668,7 +1683,8 @@ static int regulator_resolve_supply(struct regulator_dev *rdev)
 	if (r->dev.parent && r->dev.parent != rdev->dev.parent) {
 		if (!device_is_bound(r->dev.parent)) {
 			put_device(&r->dev);
-			return -EPROBE_DEFER;
+			ret = -EPROBE_DEFER;
+			goto out;
 		}
 	}
 
@@ -1676,16 +1692,48 @@ static int regulator_resolve_supply(struct regulator_dev *rdev)
 	ret = regulator_resolve_supply(r);
 	if (ret < 0) {
 		put_device(&r->dev);
-		return ret;
+		goto out;
+	}
+
+	/*
+	 * Recheck rdev->supply with rdev->mutex lock held to avoid a race
+	 * between rdev->supply null check and setting rdev->supply in
+	 * set_supply() from concurrent tasks.
+	 */
+	regulator_lock(rdev);
+
+	/* Supply just resolved by a concurrent task? */
+	if (rdev->supply) {
+		regulator_unlock(rdev);
+		put_device(&r->dev);
+		goto out;
 	}
 
 	ret = set_supply(rdev, r);
 	if (ret < 0) {
+		regulator_unlock(rdev);
 		put_device(&r->dev);
-		return ret;
+		goto out;
 	}
 
-	return 0;
+	regulator_unlock(rdev);
+
+	/*
+	 * In set_machine_constraints() we may have turned this regulator on
+	 * but we couldn't propagate to the supply if it hadn't been resolved
+	 * yet.  Do it now.
+	 */
+	if (rdev->use_count) {
+		ret = regulator_enable(rdev->supply);
+		if (ret < 0) {
+			_regulator_put(rdev->supply);
+			rdev->supply = NULL;
+			goto out;
+		}
+	}
+
+out:
+	return ret;
 }
 
 /* Internal regulator request function */
@@ -2295,8 +2343,14 @@ static int _regulator_enable(struct regulator_dev *rdev)
 			if (ret < 0)
 				return ret;
 
-			_notifier_call_chain(rdev, REGULATOR_EVENT_ENABLE,
-					     NULL);
+			if (IS_ENABLED(CONFIG_CPU_RV1126)) {
+				ret = _regulator_get_voltage(rdev);
+				_notifier_call_chain(rdev, REGULATOR_EVENT_ENABLE,
+						     &ret);
+			} else {
+				_notifier_call_chain(rdev, REGULATOR_EVENT_ENABLE,
+						     NULL);
+			}
 		} else if (ret < 0) {
 			rdev_err(rdev, "is_enabled() failed: %d\n", ret);
 			return ret;
@@ -5095,18 +5149,6 @@ static int regulator_summary_show_children(struct device *dev, void *data)
 	return 0;
 }
 
-static void strrcpy(char *dst, int dst_len, const char *src)
-{
-	int src_len = strlen(src);
-
-	if (src_len > dst_len)
-		src += src_len - dst_len;
-
-	strncpy(dst, src, dst_len);
-}
-
-#define REGULATOR_NAME_LEN	(50)
-
 static void regulator_summary_show_subtree(struct seq_file *s,
 					   struct regulator_dev *rdev,
 					   int level)
@@ -5114,17 +5156,13 @@ static void regulator_summary_show_subtree(struct seq_file *s,
 	struct regulation_constraints *c;
 	struct regulator *consumer;
 	struct summary_data summary_data;
-	char buf[REGULATOR_NAME_LEN];
-	const char *devname;
 
 	if (!rdev)
 		return;
 
-	devname = rdev_get_name(rdev);
-	strrcpy(buf, REGULATOR_NAME_LEN - level * 3, devname);
 	seq_printf(s, "%*s%-*s %3d %4d %6d ",
 		   level * 3 + 1, "",
-		   REGULATOR_NAME_LEN - level * 3, buf,
+		   30 - level * 3, rdev_get_name(rdev),
 		   rdev->use_count, rdev->open_count, rdev->bypass_count);
 
 	seq_printf(s, "%5dmV ", _regulator_get_voltage(rdev) / 1000);
@@ -5150,11 +5188,11 @@ static void regulator_summary_show_subtree(struct seq_file *s,
 		if (consumer->dev && consumer->dev->class == &regulator_class)
 			continue;
 
-		devname = consumer->dev ? consumer->supply_name : "deviceless";
-		strrcpy(buf, REGULATOR_NAME_LEN - (level + 1) * 3, devname);
 		seq_printf(s, "%*s%-*s ",
 			   (level + 1) * 3 + 1, "",
-			   REGULATOR_NAME_LEN - (level + 1) * 3, buf);
+			   30 - (level + 1) * 3,
+			   consumer->supply_name ? consumer->supply_name :
+			   consumer->dev ? dev_name(consumer->dev) : "deviceless");
 
 		switch (rdev->desc->type) {
 		case REGULATOR_VOLTAGE:
@@ -5190,14 +5228,8 @@ static int regulator_summary_show_roots(struct device *dev, void *data)
 
 static int regulator_summary_show(struct seq_file *s, void *data)
 {
-	int i;
-
-	seq_printf(s, "%-*s %3s %4s %6s %7s %7s %7s %7s\n",
-		   REGULATOR_NAME_LEN + 1, " regulator",
-		   "use", "open", "bypass", "voltage", "current", "min", "max");
-	for (i = 0; i < REGULATOR_NAME_LEN + 49; i++)
-		seq_puts(s, "-");
-	seq_puts(s, "\n");
+	seq_puts(s, " regulator                      use open bypass voltage current     min     max\n");
+	seq_puts(s, "-------------------------------------------------------------------------------\n");
 
 	class_for_each_device(&regulator_class, NULL, s,
 			      regulator_summary_show_roots);

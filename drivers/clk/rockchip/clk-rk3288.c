@@ -26,6 +26,7 @@
 #define RK3288_UART_FRAC_MAX_PRATE	600000000
 #define RK3288_I2S_FRAC_MAX_PRATE	600000000
 #define RK3288_SPDIF_FRAC_MAX_PRATE	600000000
+#define RK3288_DCLK_PARENT_MAX_PRATE	600000000
 
 enum rk3288_plls {
 	apll, dpll, cpll, gpll, npll,
@@ -205,6 +206,12 @@ PNAME(mux_edp_24m_p)	= { "ext_edp_24m", "xin24m" };
 PNAME(mux_tspout_p)	= { "cpll", "gpll", "npll", "xin27m" };
 
 PNAME(mux_aclk_vcodec_pre_p)	= { "aclk_vdpu", "aclk_vepu" };
+PNAME(mux_testout_src_p) = { "aclk_peri", "armclk", "aclk_vio0", "ddrphy",
+			     "aclk_vcodec", "aclk_gpu", "sclk_rga", "aclk_cpu",
+			     "xin24m", "xin27m", "xin32k", "clk_wifi",
+			     "dclk_vop0", "dclk_vop1", "sclk_isp_jpe",
+			     "sclk_isp" };
+
 PNAME(mux_usbphy480m_p)		= { "sclk_otgphy1_480m", "sclk_otgphy2_480m",
 				    "sclk_otgphy0_480m" };
 PNAME(mux_hsicphy480m_p)	= { "cpll", "gpll", "usbphy480m_src" };
@@ -436,9 +443,9 @@ static struct rockchip_clk_branch rk3288_clk_branches[] __initdata = {
 	COMPOSITE(DCLK_VOP0, "dclk_vop0", mux_pll_src_cpll_gpll_npll_p, 0,
 			RK3288_CLKSEL_CON(27), 0, 2, MFLAGS, 8, 8, DFLAGS,
 			RK3288_CLKGATE_CON(3), 1, GFLAGS),
-	COMPOSITE(DCLK_VOP1, "dclk_vop1", mux_pll_src_cpll_gpll_npll_p, 0,
+	COMPOSITE_DCLK(DCLK_VOP1, "dclk_vop1", mux_pll_src_cpll_gpll_npll_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
 			RK3288_CLKSEL_CON(29), 6, 2, MFLAGS, 8, 8, DFLAGS,
-			RK3288_CLKGATE_CON(3), 3, GFLAGS),
+			RK3288_CLKGATE_CON(3), 3, GFLAGS, RK3288_DCLK_PARENT_MAX_PRATE),
 
 	COMPOSITE_NODIV(SCLK_EDP_24M, "sclk_edp_24m", mux_edp_24m_p, 0,
 			RK3288_CLKSEL_CON(28), 15, 1, MFLAGS,
@@ -558,6 +565,12 @@ static struct rockchip_clk_branch rk3288_clk_branches[] __initdata = {
 	COMPOSITE_NOMUX(SCLK_TSADC, "sclk_tsadc", "xin32k", 0,
 			RK3288_CLKSEL_CON(2), 0, 6, DFLAGS,
 			RK3288_CLKGATE_CON(2), 7, GFLAGS),
+
+	MUX(SCLK_TESTOUT_SRC, "sclk_testout_src", mux_testout_src_p, 0,
+	    RK3288_MISC_CON, 8, 4, MFLAGS),
+	COMPOSITE_NOMUX(SCLK_TESTOUT, "sclk_testout", "sclk_testout_src", 0,
+			RK3288_CLKSEL_CON(2), 8, 5, DFLAGS,
+			RK3288_CLKGATE_CON(4), 15, GFLAGS),
 
 	COMPOSITE_NOMUX(SCLK_SARADC, "sclk_saradc", "xin24m", 0,
 			RK3288_CLKSEL_CON(24), 8, 8, DFLAGS,

@@ -19,6 +19,7 @@
 #include <linux/platform_device.h>
 #include <linux/reset.h>
 #include <linux/rk-camera-module.h>
+#include <linux/soc/rockchip/rk_vendor_storage.h>
 #include <linux/slab.h>
 #include <linux/timer.h>
 #include <linux/v4l2-dv-timings.h>
@@ -38,7 +39,7 @@ static int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "debug level (0-3)");
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x0, 0x3)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x0, 0x9)
 #define RK628_CSI_NAME			"rk628-csi"
 
 #define EDID_NUM_BLOCKS_MAX 		2
@@ -57,9 +58,49 @@ MODULE_PARM_DESC(debug, "debug level (0-3)");
 #define RXPHY_CFG_MAX_TIMES		3
 #define CSITX_ERR_RETRY_TIMES		3
 
+#define HDCP_KEY_KSV_SIZE		8
+#define HDCP_PRIVATE_KEY_SIZE		280
+#define HDCP_KEY_SHA_SIZE		20
+#define HDCP_KEY_SIZE			308
+#define HDCP_KEY_SEED_SIZE		2
+#define KSV_LEN				5
+
+#define HDMIRX_HDCP1X_ID		13
+
 #define YUV422_8BIT			0x1e
 /* Test Code: 0x44 (HS RX Control of Lane 0) */
 #define HSFREQRANGE(x)			UPDATE(x, 6, 1)
+#define INIT_FIFO_STATE			64
+
+struct hdcp_keys {
+	u8 KSV[HDCP_KEY_KSV_SIZE];
+	u8 devicekey[HDCP_PRIVATE_KEY_SIZE];
+	u8 sha[HDCP_KEY_SHA_SIZE];
+};
+
+struct rk628_hdcp {
+	char *seeds;
+	struct hdcp_keys *keys;
+};
+
+struct rk628_audiostate {
+	u32 hdmirx_aud_clkrate;
+	u32 fs_audio;
+	u32 ctsn_flag;
+	u32 fifo_flag;
+	int init_state;
+	int pre_state;
+	bool fifo_int;
+};
+
+#define is_validfs(x) (x == 32000 || \
+			x == 44100 || \
+			x == 48000 || \
+			x == 88200 || \
+			x == 96000 || \
+			x == 176400 || \
+			x == 192000 || \
+			x == 768000)
 
 struct rk628_csi {
 	struct device *dev;
@@ -91,6 +132,7 @@ struct rk628_csi {
 	struct clk *clk_vop;
 	struct clk *clk_rx_read;
 	struct clk *clk_csi0;
+	struct clk *clk_i2s_mclk;
 	struct regmap *grf;
 	struct regmap *rxphy_regmap;
 	struct regmap *hdmirx_regmap;
@@ -98,6 +140,7 @@ struct rk628_csi {
 	struct regmap *csi_regmap;
 	struct delayed_work delayed_work_enable_hotplug;
 	struct delayed_work delayed_work_res_change;
+	struct delayed_work delayed_work_audio_rate_change;
 	struct delayed_work delayed_work_audio;
 	struct timer_list timer;
 	struct work_struct work_i2c_poll;
@@ -113,7 +156,6 @@ struct rk628_csi {
 	u64 lane_mbps;
 	u8 csi_lanes_in_use;
 	u32 mbus_fmt_code;
-	u64 fs_audio;
 	int hdmirx_irq;
 	int plugin_irq;
 	bool nosignal;
@@ -123,6 +165,11 @@ struct rk628_csi {
 	bool audio_present;
 	bool hpd_output_inverted;
 	bool avi_rcv_rdy;
+	bool ctsn_ints_en;
+	bool vid_ints_en;
+	bool fifo_ints_en;
+	struct rk628_hdcp hdcp;
+	struct rk628_audiostate audio_state;
 };
 
 struct rk628_csi_mode {
@@ -187,10 +234,6 @@ static u8 edid_init_data[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xD8,
 };
 
-static u8 hdcp_key_data[] = {
-	0x00,
-};
-
 static const struct rk628_csi_mode supported_modes[] = {
 	{
 		.width = 3840,
@@ -252,6 +295,7 @@ static int mipi_dphy_reset(struct rk628_csi *csi);
 static void mipi_dphy_power_off(struct rk628_csi *csi);
 static void mipi_dphy_init_hsfreqrange(struct rk628_csi *csi);
 static int rk628_hdmirx_phy_power_on(struct v4l2_subdev *sd);
+static int rk628_hdmirx_phy_power_off(struct v4l2_subdev *sd);
 static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd);
 static void rk628_hdmirx_controller_setup(struct v4l2_subdev *sd);
 static void rk628_csi_format_change(struct v4l2_subdev *sd);
@@ -260,6 +304,10 @@ static void rk628_hdmirx_audio_setup(struct v4l2_subdev *sd);
 static void rk628_hdmirx_vid_enable(struct v4l2_subdev *sd, bool en);
 static void rk628_csi_set_csi(struct v4l2_subdev *sd);
 static void rk628_hdmirx_hpd_ctrl(struct v4l2_subdev *sd, bool en);
+static void rk628_csi_set_hdmi_hdcp(struct v4l2_subdev *sd, bool en);
+static void rk628_hdmirx_controller_reset(struct v4l2_subdev *sd);
+static bool rk628_rcv_supported_res(struct v4l2_subdev *sd, u32 width,
+				    u32 height);
 
 static inline struct rk628_csi *to_csi(struct v4l2_subdev *sd)
 {
@@ -273,14 +321,14 @@ static bool tx_5v_power_present(struct v4l2_subdev *sd)
 	struct rk628_csi *csi = to_csi(sd);
 
 	cnt = 0;
-	for (i = 0; i < 10; i++) {
+	for (i = 0; i < 5; i++) {
 		val = gpiod_get_value(csi->plugin_det_gpio);
 		if (val > 0)
 			cnt++;
-		usleep_range(2000, 2100);
+		usleep_range(500, 600);
 	}
 
-	ret = (cnt >= 7) ? true : false;
+	ret = (cnt >= 3) ? true : false;
 	v4l2_dbg(1, debug, sd, "%s: %d\n", __func__, ret);
 
 	return ret;
@@ -308,7 +356,26 @@ static int get_audio_sampling_rate(struct v4l2_subdev *sd)
 	if (no_signal(sd))
 		return 0;
 
-	return csi->fs_audio;
+	return csi->audio_state.fs_audio;
+}
+
+static void rk628_hdmirx_ctrl_enable(struct v4l2_subdev *sd, int en)
+{
+	u32 mask;
+	struct rk628_csi *csi = to_csi(sd);
+
+	if (en) {
+		/* don't enable audio until N CTS updated */
+		mask = HDMI_ENABLE_MASK;
+		v4l2_dbg(1, debug, sd, "%s: %#x %d\n", __func__, mask, en);
+		regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_DMI_DISABLE_IF,
+				   mask, HDMI_ENABLE(1) | AUD_ENABLE(1));
+	} else {
+		mask = AUD_ENABLE_MASK | HDMI_ENABLE_MASK;
+		v4l2_dbg(1, debug, sd, "%s: %#x %d\n", __func__, mask, en);
+		regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_DMI_DISABLE_IF,
+				   mask, HDMI_ENABLE(0) | AUD_ENABLE(0));
+	}
 }
 
 static int rk628_csi_get_detected_timings(struct v4l2_subdev *sd,
@@ -340,12 +407,12 @@ static int rk628_csi_get_detected_timings(struct v4l2_subdev *sd,
 	htotal = (val >> 16) & 0xffff;
 	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_VTL, &val);
 	vtotal = val & 0xffff;
-	regmap_read(csi->hdmirx_regmap, 0x3014c, &val);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_HT1, &val);
 	hofs_pix = val & 0xffff;
-	regmap_read(csi->hdmirx_regmap, 0x30164, &val);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_VOL, &val);
 	vbp = (val & 0xffff) + 1;
 
-	regmap_read(csi->hdmirx_regmap, 0x3009c, &val);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_HDMI_CKM_RESULT, &val);
 	tmdsclk_cnt = val & 0xffff;
 	tmp_data = tmdsclk_cnt;
 	tmp_data = ((tmp_data * MODETCLK_HZ) + MODETCLK_CNT_NUM / 2);
@@ -358,12 +425,12 @@ static int rk628_csi_get_detected_timings(struct v4l2_subdev *sd,
 	}
 	fps = (tmds_clk + (htotal * vtotal) / 2) / (htotal * vtotal);
 
-	regmap_read(csi->hdmirx_regmap, 0x30148, &val);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_HT0, &val);
 	modetclk_cnt_hs = val & 0xffff;
 	hs = (tmdsclk_cnt * modetclk_cnt_hs + MODETCLK_CNT_NUM / 2) /
 		MODETCLK_CNT_NUM;
 
-	regmap_read(csi->hdmirx_regmap, 0x3015c, &val);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_VSC, &val);
 	modetclk_cnt_vs = val & 0xffff;
 	vs = (tmdsclk_cnt * modetclk_cnt_vs + MODETCLK_CNT_NUM / 2) /
 		MODETCLK_CNT_NUM;
@@ -440,23 +507,49 @@ static void rk628_csi_delayed_work_enable_hotplug(struct work_struct *work)
 	v4l2_dbg(1, debug, sd, "%s: 5v_det:%d\n", __func__, plugin);
 	if (plugin) {
 		rk628_csi_enable_interrupts(sd, false);
+		rk628_hdmirx_audio_setup(sd);
+		rk628_csi_set_hdmi_hdcp(sd, csi->enable_hdcp);
 		rk628_hdmirx_hpd_ctrl(sd, true);
 		rk628_hdmirx_config_all(sd);
 		rk628_csi_enable_interrupts(sd, true);
 		regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
 				SW_I2S_DATA_OEN_MASK, SW_I2S_DATA_OEN(0));
-		schedule_delayed_work(&csi->delayed_work_audio, 0);
 	} else {
 		rk628_csi_enable_interrupts(sd, false);
 		enable_stream(sd, false);
 		cancel_delayed_work(&csi->delayed_work_res_change);
-		rk628_hdmirx_hpd_ctrl(sd, false);
-		csi->nosignal = true;
-		regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
-				SW_I2S_DATA_OEN_MASK, SW_I2S_DATA_OEN(1));
 		cancel_delayed_work(&csi->delayed_work_audio);
+		rk628_hdmirx_hpd_ctrl(sd, false);
+		rk628_hdmirx_phy_power_off(sd);
+		rk628_hdmirx_controller_reset(sd);
+		csi->nosignal = true;
 	}
 	mutex_unlock(&csi->confctl_mutex);
+}
+
+static int rk628_check_resulotion_change(struct v4l2_subdev *sd)
+{
+	u32 val;
+	struct rk628_csi *csi = to_csi(sd);
+	u32 htotal, vtotal;
+	u32 old_htotal, old_vtotal;
+	struct v4l2_bt_timings *bt = &csi->timings.bt;
+
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_HT1, &val);
+	htotal = (val >> 16) & 0xffff;
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_VTL, &val);
+	vtotal = val & 0xffff;
+
+	old_htotal = bt->hfrontporch + bt->hsync + bt->width + bt->hbackporch;
+	old_vtotal = bt->vfrontporch + bt->vsync + bt->height + bt->vbackporch;
+
+	v4l2_dbg(1, debug, sd, "new mode: %d x %d\n", htotal, vtotal);
+	v4l2_dbg(1, debug, sd, "old mode: %d x %d\n", old_htotal, old_vtotal);
+
+	if (htotal != old_htotal || vtotal != old_vtotal)
+		return 1;
+
+	return 0;
 }
 
 static void rk628_delayed_work_res_change(struct work_struct *work)
@@ -472,46 +565,134 @@ static void rk628_delayed_work_res_change(struct work_struct *work)
 	plugin = tx_5v_power_present(sd);
 	v4l2_dbg(1, debug, sd, "%s: 5v_det:%d\n", __func__, plugin);
 	if (plugin) {
-		v4l2_dbg(1, debug, sd, "res change, recfg ctrler and phy!\n");
-		rk628_hdmirx_config_all(sd);
-		rk628_csi_enable_interrupts(sd, true);
+		if (rk628_check_resulotion_change(sd)) {
+			v4l2_dbg(1, debug, sd, "res change, recfg ctrler and phy!\n");
+			cancel_delayed_work_sync(&csi->delayed_work_audio);
+			rk628_hdmirx_phy_power_off(sd);
+			rk628_hdmirx_controller_reset(sd);
+			rk628_hdmirx_audio_setup(sd);
+			rk628_csi_set_hdmi_hdcp(sd, csi->enable_hdcp);
+			rk628_hdmirx_hpd_ctrl(sd, true);
+			rk628_hdmirx_config_all(sd);
+			rk628_csi_enable_interrupts(sd, true);
+			regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
+					   SW_I2S_DATA_OEN_MASK, SW_I2S_DATA_OEN(0));
+		} else {
+			rk628_csi_format_change(sd);
+			csi->nosignal = false;
+			rk628_csi_enable_interrupts(sd, true);
+		}
 	}
 	mutex_unlock(&csi->confctl_mutex);
+}
+
+static int hdcp_load_keys_cb(struct rk628_csi *csi)
+{
+	struct rk628_hdcp *hdcp = &csi->hdcp;
+	int size;
+	u8 hdcp_vendor_data[320];
+
+	hdcp->keys = kmalloc(HDCP_KEY_SIZE, GFP_KERNEL);
+	if (!hdcp->keys)
+		return -ENOMEM;
+
+	hdcp->seeds = kmalloc(HDCP_KEY_SEED_SIZE, GFP_KERNEL);
+	if (!hdcp->seeds) {
+		kfree(hdcp->keys);
+		hdcp->keys = NULL;
+		return -ENOMEM;
+	}
+
+	size = rk_vendor_read(HDMIRX_HDCP1X_ID, hdcp_vendor_data, 314);
+	if (size < (HDCP_KEY_SIZE + HDCP_KEY_SEED_SIZE)) {
+		dev_dbg(csi->dev, "HDCP: read size %d\n", size);
+		kfree(hdcp->keys);
+		hdcp->keys = NULL;
+		kfree(hdcp->seeds);
+		hdcp->seeds = NULL;
+		return -EINVAL;
+	}
+	memcpy(hdcp->keys, hdcp_vendor_data, HDCP_KEY_SIZE);
+	memcpy(hdcp->seeds, hdcp_vendor_data + HDCP_KEY_SIZE,
+	       HDCP_KEY_SEED_SIZE);
+
+	return 0;
+}
+
+static int rk628_hdmi_hdcp_load_key(struct rk628_csi *csi)
+{
+	int i;
+	int ret;
+	struct hdcp_keys *hdcp_keys;
+	struct rk628_hdcp *hdcp = &csi->hdcp;
+	u32 seeds = 0;
+
+	if (!hdcp->keys) {
+		ret = hdcp_load_keys_cb(csi);
+		if (ret) {
+			dev_err(csi->dev, "HDCP: load key failed\n");
+			return ret;
+		}
+	}
+	hdcp_keys = hdcp->keys;
+
+	regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
+			HDCP_ENABLE_MASK |
+			HDCP_ENC_EN_MASK,
+			HDCP_ENABLE(0) |
+			HDCP_ENC_EN(0));
+	regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
+			SW_ADAPTER_I2CSLADR_MASK |
+			SW_EFUSE_HDCP_EN_MASK,
+			SW_ADAPTER_I2CSLADR(0) |
+			SW_EFUSE_HDCP_EN(1));
+	/* The useful data in ksv should be 5 byte */
+	for (i = 0; i < KSV_LEN; i++)
+		regmap_write(csi->key_regmap, HDCP_KEY_KSV0 + i * 4,
+			     hdcp_keys->KSV[i]);
+
+	for (i = 0; i < HDCP_PRIVATE_KEY_SIZE; i++)
+		regmap_write(csi->key_regmap, HDCP_KEY_DPK0 + i * 4,
+			     hdcp_keys->devicekey[i]);
+
+	regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
+			SW_ADAPTER_I2CSLADR_MASK |
+			SW_EFUSE_HDCP_EN_MASK,
+			SW_ADAPTER_I2CSLADR(0) |
+			SW_EFUSE_HDCP_EN(0));
+	regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
+			HDCP_ENABLE_MASK |
+			HDCP_ENC_EN_MASK,
+			HDCP_ENABLE(1) |
+			HDCP_ENC_EN(1));
+
+	/* Enable decryption logic */
+	if (hdcp->seeds) {
+		seeds = (hdcp->seeds[0] & 0xff) << 8;
+		seeds |= (hdcp->seeds[1] & 0xff);
+	}
+	if (seeds) {
+		regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
+				   KEY_DECRIPT_ENABLE_MASK,
+				   KEY_DECRIPT_ENABLE(1));
+		regmap_write(csi->hdmirx_regmap, HDMI_RX_HDCP_SEED, seeds);
+	} else {
+		regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
+				   KEY_DECRIPT_ENABLE_MASK,
+				   KEY_DECRIPT_ENABLE(0));
+	}
+
+	return 0;
 }
 
 static void rk628_csi_set_hdmi_hdcp(struct v4l2_subdev *sd, bool en)
 {
 	struct rk628_csi *csi = to_csi(sd);
-	u16 i;
 
 	v4l2_dbg(1, debug, sd, "%s: %sable\n", __func__, en ? "en" : "dis");
 
 	if (en) {
-		regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
-				HDCP_ENABLE_MASK |
-				HDCP_ENC_EN_MASK,
-				HDCP_ENABLE(1) |
-				HDCP_ENC_EN(1));
-		regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
-				SW_ADAPTER_I2CSLADR_MASK |
-				SW_EFUSE_HDCP_EN_MASK,
-				SW_ADAPTER_I2CSLADR(0) |
-				SW_EFUSE_HDCP_EN(1));
-		for ( i = 0; i < ARRAY_SIZE(hdcp_key_data); i++) {
-			regmap_write(csi->key_regmap, HDCP_KEY_BASE + i * 4,
-					hdcp_key_data[i]);
-		}
-
-		regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
-				SW_ADAPTER_I2CSLADR_MASK |
-				SW_EFUSE_HDCP_EN_MASK,
-				SW_ADAPTER_I2CSLADR(0) |
-				SW_EFUSE_HDCP_EN(0));
-		regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
-				HDCP_ENABLE_MASK |
-				HDCP_ENC_EN_MASK,
-				HDCP_ENABLE(1) |
-				HDCP_ENC_EN(1));
+		rk628_hdmi_hdcp_load_key(csi);
 	} else {
 		regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
 				HDCP_ENABLE_MASK |
@@ -807,6 +988,13 @@ static void rk628_post_process_setup(struct v4l2_subdev *sd)
 	src.vsync_len = bt->vsync;
 	src.vback_porch = bt->vbackporch;
 	src.pixelclock = bt->pixelclock;
+	if (!src.pixelclock) {
+		enable_stream(sd, false);
+		csi->nosignal = true;
+		schedule_delayed_work(&csi->delayed_work_enable_hotplug, HZ / 20);
+		return;
+	}
+
 	src.flags = 0;
 	if (bt->interlaced == V4L2_DV_INTERLACED)
 		src.flags |= DISPLAY_FLAGS_INTERLACED;
@@ -843,7 +1031,9 @@ static void rk628_csi_set_csi(struct v4l2_subdev *sd)
 	u8 lanes = csi->csi_lanes_in_use;
 	u8 lane_num;
 	u8 dphy_lane_en;
-	u32 wc_usrdef, val;
+	u32 wc_usrdef, val, avi_pb = 0;
+	u8 cnt = 0, max_cnt = 2;
+	u32 hdcp_ctrl_val = 0;
 
 	lane_num = lanes - 1;
 	dphy_lane_en = (1 << (lanes + 1)) - 1;
@@ -904,16 +1094,36 @@ static void rk628_csi_set_csi(struct v4l2_subdev *sd)
 	regmap_write(csi->csi_regmap, CSITX_CONFIG_DONE, CONFIG_DONE_IMD);
 	v4l2_dbg(1, debug, sd, "%s csi cofig done\n", __func__);
 
-	for (i = 0; i < 10; i++) {
-		if (csi->avi_rcv_rdy)
-			break;
-		usleep_range(20*1000, 21*1000);
+	mutex_lock(&csi->confctl_mutex);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL, &val);
+	if ((val & HDCP_ENABLE_MASK))
+		max_cnt = 5;
+
+	for (i = 0; i < 100; i++) {
+		regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_AVI_PB, &val);
+
+		v4l2_dbg(2, debug, sd, "%s PDEC_AVI_PB:%#x, avi_rcv_rdy:%d\n",
+			 __func__, val, csi->avi_rcv_rdy);
+		if (i > 30 && !(hdcp_ctrl_val & 0x400)) {
+			regmap_read(csi->hdmirx_regmap, HDMI_RX_HDCP_CTRL,
+				    &hdcp_ctrl_val);
+			/* force hdcp avmute */
+			hdcp_ctrl_val |= 0x400;
+			regmap_write(csi->csi_regmap, HDMI_RX_HDCP_CTRL,
+				     hdcp_ctrl_val);
+		}
+
+		if (val && val == avi_pb && csi->avi_rcv_rdy) {
+			if (++cnt >= max_cnt)
+				break;
+		} else {
+			cnt = 0;
+			avi_pb = val;
+		}
+		msleep(30);
 	}
+	mutex_unlock(&csi->confctl_mutex);
 
-	if (i == 10)
-		v4l2_err(sd, "%s Have not rcv avi packet!\n", __func__);
-
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_AVI_PB, &val);
 	video_fmt = (val & VIDEO_FORMAT_MASK) >> 5;
 	v4l2_dbg(1, debug, sd, "%s PDEC_AVI_PB:%#x, video format:%d\n",
 			__func__, val, video_fmt);
@@ -928,6 +1138,10 @@ static void rk628_csi_set_csi(struct v4l2_subdev *sd)
 				SW_YUV2VYU_SWP(0) |
 				SW_R2Y_EN(1));
 	}
+
+	/* if avi packet is not stable, reset ctrl*/
+	if (cnt < max_cnt)
+		schedule_delayed_work(&csi->delayed_work_enable_hotplug, HZ / 20);
 }
 
 static int rk628_hdmirx_phy_power_on(struct v4l2_subdev *sd)
@@ -952,10 +1166,11 @@ static int rk628_hdmirx_phy_power_on(struct v4l2_subdev *sd)
 			v4l2_err(sd, "hdmi rxphy power off failed!\n");
 		else
 			csi->rxphy_pwron = false;
+		usleep_range(100, 100);
 	}
 
-	usleep_range(100, 100);
 	if (csi->rxphy_pwron == false) {
+		rk628_hdmirx_ctrl_enable(sd, 0);
 		ret = phy_power_on(csi->rxphy);
 		if (ret) {
 			csi->rxphy_pwron = false;
@@ -963,8 +1178,27 @@ static int rk628_hdmirx_phy_power_on(struct v4l2_subdev *sd)
 		} else {
 			csi->rxphy_pwron = true;
 		}
+		rk628_hdmirx_ctrl_enable(sd, 1);
+		msleep(60);
 	}
 
+	return ret;
+}
+
+static int rk628_hdmirx_phy_power_off(struct v4l2_subdev *sd)
+{
+	struct rk628_csi *csi = to_csi(sd);
+	int ret = 0;
+
+	if (csi->rxphy_pwron) {
+		v4l2_dbg(1, debug, sd, "rxphy power off!\n");
+		ret = phy_power_off(csi->rxphy);
+		if (ret)
+			v4l2_err(sd, "hdmi rxphy power off failed!\n");
+		else
+			csi->rxphy_pwron = false;
+	}
+	usleep_range(100, 100);
 	return ret;
 }
 
@@ -986,10 +1220,104 @@ static void rk628_hdmirx_controller_reset(struct v4l2_subdev *sd)
 {
 	struct rk628_csi *csi = to_csi(sd);
 
+	v4l2_dbg(1, debug, sd, "%s reset hdmirx_controller\n", __func__);
+	reset_control_assert(csi->rst_hdmirx_pon);
+	reset_control_deassert(csi->rst_hdmirx_pon);
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_DMI_SW_RST, 0x000101ff);
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_DMI_DISABLE_IF, 0x00000000);
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_DMI_DISABLE_IF, 0x0000017f);
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_DMI_DISABLE_IF, 0x0001017f);
+}
+
+static void rk628_hdmirx_audio_fifo_init(struct v4l2_subdev *sd)
+{
+	struct rk628_csi *csi = to_csi(sd);
+
+	v4l2_dbg(1, debug, sd, "%s initial fifo\n", __func__);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_ICLR, 0x1f);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_CTRL, 0x10001);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_CTRL, 0x10000);
+	csi->audio_state.pre_state = csi->audio_state.init_state = INIT_FIFO_STATE*4;
+}
+
+static void rk628_hdmirx_audio_fifo_initd(struct v4l2_subdev *sd)
+{
+	struct rk628_csi *csi = to_csi(sd);
+
+	v4l2_dbg(1, debug, sd, "%s double initial fifo\n", __func__);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_ICLR, 0x1f);
+	regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_TH,
+			   AFIF_TH_START_MASK,
+			   AFIF_TH_START(192));
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_CTRL, 0x10001);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_CTRL, 0x10000);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_CTRL, 0x10001);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_CTRL, 0x10000);
+	regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_TH,
+			   AFIF_TH_START_MASK,
+			   AFIF_TH_START(INIT_FIFO_STATE));
+	csi->audio_state.pre_state = csi->audio_state.init_state = INIT_FIFO_STATE*4;
+}
+
+static uint32_t rk628_hdmirx_audio_fs(struct v4l2_subdev *sd)
+{
+	struct rk628_csi *csi = to_csi(sd);
+	u64 tmdsclk = 0;
+	u32 clkrate = 0, cts_decoded = 0, n_decoded = 0, fs_audio = 0;
+
+	/* fout=128*fs=ftmds*N/CTS */
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_HDMI_CKM_RESULT, &clkrate);
+	clkrate = clkrate & 0xffff;
+	/* tmdsclk = (clkrate/1000) * 49500000 */
+	tmdsclk = clkrate * (49500000 / 1000);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_ACR_CTS, &cts_decoded);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_ACR_N, &n_decoded);
+	if (cts_decoded != 0) {
+		fs_audio = div_u64((tmdsclk * n_decoded), cts_decoded);
+		fs_audio /= 128;
+		fs_audio = div_u64(fs_audio + 50, 100);
+		fs_audio *= 100;
+	}
+	v4l2_dbg(1, debug, sd,
+		 "%s: clkrate:%u tmdsclk:%llu, n_decoded:%u, cts_decoded:%u, fs_audio:%u\n",
+		 __func__, clkrate, tmdsclk, n_decoded, cts_decoded, fs_audio);
+	if (!is_validfs(fs_audio))
+		fs_audio = 0;
+	return fs_audio;
+}
+
+static void rk628_hdmirx_audio_clk_set_rate(struct v4l2_subdev *sd, u32 rate)
+{
+	struct rk628_csi *csi = to_csi(sd);
+
+	v4l2_dbg(2, debug, sd, "%s: %u to %u\n",
+		 __func__, csi->audio_state.hdmirx_aud_clkrate, rate);
+	clk_set_rate(csi->clk_hdmirx_aud, rate);
+	csi->audio_state.hdmirx_aud_clkrate = rate;
+}
+
+static void rk628_hdmirx_audio_clk_inc_rate(struct v4l2_subdev *sd, int dis)
+{
+	struct rk628_csi *csi = to_csi(sd);
+	u32 hdmirx_aud_clkrate = csi->audio_state.hdmirx_aud_clkrate + dis;
+
+	v4l2_dbg(2, debug, sd, "%s: %u to %u\n",
+		 __func__, csi->audio_state.hdmirx_aud_clkrate, hdmirx_aud_clkrate);
+	clk_set_rate(csi->clk_hdmirx_aud, hdmirx_aud_clkrate);
+	csi->audio_state.hdmirx_aud_clkrate = hdmirx_aud_clkrate;
+}
+
+static void rk628_hdmirx_audio_set_fs(struct v4l2_subdev *sd, u32 fs_audio)
+{
+	struct rk628_csi *csi = to_csi(sd);
+	u32 hdmirx_aud_clkrate_t = fs_audio*128;
+
+	v4l2_dbg(2, debug, sd, "%s: %u to %u with fs %u\n", __func__,
+		 csi->audio_state.hdmirx_aud_clkrate, hdmirx_aud_clkrate_t,
+		 fs_audio);
+	clk_set_rate(csi->clk_hdmirx_aud, hdmirx_aud_clkrate_t);
+	csi->audio_state.hdmirx_aud_clkrate = hdmirx_aud_clkrate_t;
+	csi->audio_state.fs_audio = fs_audio;
 }
 
 static void rk628_hdmirx_audio_setup(struct v4l2_subdev *sd)
@@ -999,9 +1327,15 @@ static void rk628_hdmirx_audio_setup(struct v4l2_subdev *sd)
 
 	audio_pll_n = 5644;
 	audio_pll_cts = 148500;
+	csi->audio_state.ctsn_flag = 0;
+	csi->audio_state.fs_audio = 0;
+	csi->audio_state.pre_state = 0;
+	csi->audio_state.init_state = INIT_FIFO_STATE*4;
+	csi->audio_state.fifo_int = false;
+	csi->fifo_ints_en = false;
+	csi->ctsn_ints_en = false;
 
-	clk_set_rate(csi->clk_hdmirx_aud, 5644800);
-
+	rk628_hdmirx_audio_clk_set_rate(sd, 5644800);
 	/* manual aud CTS */
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUDPLL_GEN_CTS, audio_pll_cts);
 	/* manual aud N */
@@ -1036,14 +1370,15 @@ static void rk628_hdmirx_audio_setup(struct v4l2_subdev *sd)
 			AUTO_ACLK_MUTE(2)	|
 			AUD_MUTE_SPEED(1)	|
 			AUD_AVMUTE_EN(1)	|
-			AUD_MUTE_SEL(1)		|
+			AUD_MUTE_SEL(0)		|
 			AUD_MUTE_MODE(1));
 
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_PAO_CTRL,
 			PAO_RATE(0));
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_CHEXTR_CTRL,
 			AUD_LAYOUT_CTRL(1));
-
+	csi->ctsn_ints_en = true;
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_SET, ACR_N_CHG_ICLR | ACR_CTS_CHG_ICLR);
 	/* audio detect */
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_AUDIODET_CTRL,
 			AUDIODET_THRESHOLD(0));
@@ -1055,102 +1390,83 @@ static void rk628_csi_delayed_work_audio(struct work_struct *work)
 	struct rk628_csi *csi = container_of(dwork, struct rk628_csi,
 			delayed_work_audio);
 	struct v4l2_subdev *sd = &csi->sd;
-	u32 val;
-	static int hdmirx_aud_clkrate = 5644800,
-		   init_state = 256, pre_state, cur_state;
-	u32 clkrate = 0, cts_decoded = 0, n_decoded = 0;
-	u64 tmdsclk = 0, fs_audio = 0;
-	static u64 pre_fs_audio;
+	struct rk628_audiostate *audio_state = &csi->audio_state;
+	u32 fs_audio;
+	int cur_state, init_state, pre_state;
 
-	/* fout=128*fs=ftmds*N/CTS */
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_HDMI_CKM_RESULT, &clkrate);
-	clkrate = clkrate & 0xffff;
-	/* tmdsclk = (clkrate/1000) * 49500000 */
-	tmdsclk = clkrate * (49500000 / 1000);
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_ACR_CTS, &cts_decoded);
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_ACR_N, &n_decoded);
-	/* fs_audio = ((tmdsclk * n_decoded) / cts_decoded ) / 128 */
-	if (cts_decoded != 0) {
-		fs_audio = div_u64((tmdsclk * n_decoded), cts_decoded);
-		fs_audio = div_u64(fs_audio, 128);
-		fs_audio = div_u64(fs_audio + 50, 100);
-		fs_audio *= 100;
+	init_state = audio_state->init_state;
+	pre_state = audio_state->pre_state;
+	fs_audio = rk628_hdmirx_audio_fs(sd);
+	if (!is_validfs(fs_audio)) {
+		v4l2_dbg(2, debug, sd, "%s: no supported fs(%u)\n", __func__, fs_audio);
+		goto exit;
 	}
-	v4l2_dbg(2, debug, sd,
-		"%s: clkrate:%d tmdsclk:%llu, n_decoded:%d, cts_decoded:%d, fs_audio:%llu\n",
-		__func__, clkrate, tmdsclk, n_decoded, cts_decoded, fs_audio);
-	if ((fs_audio != 0) && (abs(fs_audio - pre_fs_audio) > 1000)) {
-		hdmirx_aud_clkrate = 128 * fs_audio;
-		switch (fs_audio) {
-		case 88200:
-			hdmirx_aud_clkrate = 11111000;
-			break;
-		case 96000:
-			hdmirx_aud_clkrate = 12121000;
-			break;
-		case 176400:
-			hdmirx_aud_clkrate = 22222000;
-			break;
-		case 192000:
-			hdmirx_aud_clkrate = 23529000;
-			break;
-		default:
-			break;
-		}
-		clk_set_rate(csi->clk_hdmirx_aud, hdmirx_aud_clkrate);
-		v4l2_dbg(2, debug, sd,
-			"%s: audo switch clk_hdmirx_aud to %d  fs_audio:%llu pre_fs_audio:%llu\n",
-			__func__, hdmirx_aud_clkrate, fs_audio, pre_fs_audio);
-		if (pre_fs_audio != 0) {
-			regmap_write(csi->hdmirx_regmap,
-					HDMI_RX_AUD_FIFO_ICLR, 0x1f);
-			regmap_write(csi->hdmirx_regmap,
-					HDMI_RX_AUD_FIFO_CTRL, 0x10001);
-			regmap_write(csi->hdmirx_regmap,
-					HDMI_RX_AUD_FIFO_CTRL, 0x10000);
-		}
-		pre_fs_audio = fs_audio;
-		csi->fs_audio = fs_audio;
-	}
-
+	if (abs(fs_audio - audio_state->fs_audio) > 1000)
+		rk628_hdmirx_audio_set_fs(sd, fs_audio);
 	regmap_read(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_FILLSTS1, &cur_state);
-	v4l2_dbg(2, debug, sd,
-		"%s: HDMI_RX_AUD_FIFO_FILLSTS1:%#x, single offset:%d, total offset:%d\n",
-		__func__, cur_state, cur_state-pre_state, cur_state-init_state);
+	v4l2_dbg(2, debug, sd, "%s: HDMI_RX_AUD_FIFO_FILLSTS1:%#x, single offset:%d, total offset:%d\n",
+		 __func__, cur_state, cur_state - pre_state, cur_state - init_state);
 	if (cur_state != 0)
 		csi->audio_present = true;
 	else
 		csi->audio_present = false;
-	if ((cur_state-init_state) > 16 && (cur_state-pre_state) > 0) {
-		hdmirx_aud_clkrate += 10;
-		clk_set_rate(csi->clk_hdmirx_aud, hdmirx_aud_clkrate);
-		v4l2_dbg(2, debug, sd, "%s: (cur_state-init_state) > 16 hdmirx_aud_clkrate:%d\n",
-				__func__, hdmirx_aud_clkrate);
-	} else if ((cur_state != 0) && (cur_state-init_state) < -16 && (cur_state-pre_state) < 0) {
-		hdmirx_aud_clkrate -= 10;
-		clk_set_rate(csi->clk_hdmirx_aud, hdmirx_aud_clkrate);
-		v4l2_dbg(2, debug, sd, "%s: (cur_state-init_state) < -16 hdmirx_aud_clkrate:%d\n",
-				__func__, hdmirx_aud_clkrate);
-	}
-	pre_state = cur_state;
 
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_ISTS, &val);
-	v4l2_dbg(2, debug, sd, "%s: HDMI_RX_AUD_FIFO_ISTS:%#x\n", __func__, val);
-	if ((val != 0x9) && ((val & 0x10) || (val & 0x8))) {
-		regmap_write(csi->hdmirx_regmap,
-				HDMI_RX_AUD_FIFO_ICLR, 0x1f);
-		regmap_write(csi->hdmirx_regmap,
-				HDMI_RX_AUD_FIFO_CTRL, 0x10001);
-		/*msleep(1);*/
-		regmap_write(csi->hdmirx_regmap,
-				HDMI_RX_AUD_FIFO_CTRL, 0x10000);
-		pre_state = cur_state = 0;
-
-		v4l2_err(sd, "%s: HDMI_RX_AUD_FIFO_ISTS:%#x, underflow or overflow\n",
-				__func__, val);
-	}
-
+	if ((cur_state - init_state) > 16 && (cur_state - pre_state) > 0)
+		rk628_hdmirx_audio_clk_inc_rate(sd, 10);
+	else if ((cur_state != 0) && (cur_state - init_state) < -16 && (cur_state - pre_state) < 0)
+		rk628_hdmirx_audio_clk_inc_rate(sd, -10);
+	audio_state->pre_state = cur_state;
+exit:
 	schedule_delayed_work(&csi->delayed_work_audio, msecs_to_jiffies(1000));
+}
+
+static void rk628_csi_delayed_work_audio_rate_change(struct work_struct *work)
+{
+	u32 fifo_ints, fifo_fillsts;
+	u32 fs_audio;
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct rk628_csi *csi = container_of(dwork, struct rk628_csi,
+					     delayed_work_audio_rate_change);
+	struct v4l2_subdev *sd = &csi->sd;
+
+	mutex_lock(&csi->confctl_mutex);
+	fs_audio = rk628_hdmirx_audio_fs(sd);
+	v4l2_dbg(1, debug, sd, "%s get audio fs %u\n", __func__, fs_audio);
+	if (csi->audio_state.ctsn_flag == (ACR_N_CHG_ICLR | ACR_CTS_CHG_ICLR)) {
+		csi->audio_state.ctsn_flag = 0;
+		if (is_validfs(fs_audio)) {
+			rk628_hdmirx_audio_set_fs(sd, fs_audio);
+			regmap_read(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_ISTS, &fifo_ints);
+			v4l2_dbg(1, debug, sd, "%s fifo ints %#x\n", __func__, fifo_ints);
+			if ((fifo_ints & 0x18) == 0x18)
+				rk628_hdmirx_audio_fifo_initd(sd);
+			else if (fifo_ints & 0x18)
+				rk628_hdmirx_audio_fifo_init(sd);
+			regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_DMI_DISABLE_IF,
+					   AUD_ENABLE_MASK, AUD_ENABLE(1));
+			/* We start audio work after recieveing cts n interrupt */
+			csi->fifo_ints_en = true;
+			regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_IEN_SET,
+				     AFIF_OVERFL_ISTS | AFIF_UNDERFL_ISTS);
+			schedule_delayed_work(&csi->delayed_work_audio, msecs_to_jiffies(1000));
+		} else {
+			v4l2_warn(sd, "%s invalid fs when ctsn updating\n", __func__);
+		}
+	}
+	if (csi->audio_state.fifo_int) {
+		csi->audio_state.fifo_int = false;
+		if (is_validfs(fs_audio))
+			rk628_hdmirx_audio_set_fs(sd, fs_audio);
+		regmap_read(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_FILLSTS1, &fifo_fillsts);
+		if (fifo_fillsts) {
+			v4l2_dbg(1, debug, sd, "%s overflow after underflow\n", __func__);
+			rk628_hdmirx_audio_fifo_initd(sd);
+		} else {
+			v4l2_dbg(1, debug, sd, "%s underflow after overflow\n", __func__);
+			rk628_hdmirx_audio_fifo_init(sd);
+		}
+	}
+	mutex_unlock(&csi->confctl_mutex);
 }
 
 static void rk628_hdmirx_controller_setup(struct v4l2_subdev *sd)
@@ -1180,6 +1496,16 @@ static void rk628_hdmirx_controller_setup(struct v4l2_subdev *sd)
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_HDMI_CKM_EVLTM, 0x00103e70);
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_HDMI_CKM_F, 0x0c1c0b54);
 	regmap_write(csi->hdmirx_regmap, HDMI_RX_HDMI_RESMPL_CTRL, 0x00000001);
+
+	regmap_update_bits(csi->hdmirx_regmap, HDMI_RX_HDCP_SETTINGS,
+			   HDMI_RESERVED_MASK |
+			   FAST_I2C_MASK |
+			   ONE_DOT_ONE_MASK |
+			   FAST_REAUTH_MASK,
+			   HDMI_RESERVED(1) |
+			   FAST_I2C(0) |
+			   ONE_DOT_ONE(0) |
+			   FAST_REAUTH(0));
 }
 
 static bool rk628_rcv_supported_res(struct v4l2_subdev *sd, u32 width,
@@ -1254,7 +1580,6 @@ static int rk628_hdmirx_phy_setup(struct v4l2_subdev *sd)
 	if (i == RXPHY_CFG_MAX_TIMES) {
 		return -1;
 	}
-
 	return 0;
 }
 
@@ -1269,6 +1594,7 @@ static void rk628_csi_initial_setup(struct v4l2_subdev *sd)
 	clk_prepare_enable(csi->clk_hdmirx_cec);
 	clk_prepare_enable(csi->clk_vop);
 	clk_prepare_enable(csi->clk_csi0);
+	clk_prepare_enable(csi->clk_i2s_mclk);
 	udelay(10);
 	reset_control_assert(csi->rst_hdmirx);
 	reset_control_assert(csi->rst_hdmirx_pon);
@@ -1297,18 +1623,13 @@ static void rk628_csi_initial_setup(struct v4l2_subdev *sd)
 	def_edid.blocks = 2;
 	def_edid.edid = edid_init_data;
 	rk628_csi_s_edid(sd, &def_edid);
-	rk628_csi_set_hdmi_hdcp(sd, csi->enable_hdcp);
-	rk628_hdmirx_audio_setup(sd);
+	rk628_csi_set_hdmi_hdcp(sd, false);
 
 	mipi_dphy_reset(csi);
 	mipi_dphy_power_on(csi);
 	csi->txphy_pwron = true;
-	if (tx_5v_power_present(sd)) {
-		rk628_hdmirx_config_all(sd);
-		regmap_update_bits(csi->grf, GRF_SYSTEM_CON0,
-				SW_I2S_DATA_OEN_MASK, SW_I2S_DATA_OEN(0));
-		schedule_delayed_work(&csi->delayed_work_audio, msecs_to_jiffies(1000));
-	}
+	if (tx_5v_power_present(sd))
+		schedule_delayed_work(&csi->delayed_work_enable_hotplug, msecs_to_jiffies(1000));
 }
 
 static void rk628_csi_format_change(struct v4l2_subdev *sd)
@@ -1335,36 +1656,79 @@ static void rk628_csi_format_change(struct v4l2_subdev *sd)
 
 static void rk628_csi_enable_interrupts(struct v4l2_subdev *sd, bool en)
 {
-	u32 val_a, val_b;
+	u32 pdec_ien, md_ien;
+	u32 pdec_mask = 0, md_mask = 0;
 	struct rk628_csi *csi = to_csi(sd);
 
+	pdec_mask |= AVI_RCV_ENSET;
+	md_mask = VACT_LIN_ENSET | HACT_PIX_ENSET | HS_CLK_ENSET |
+		  DE_ACTIVITY_ENSET | VS_ACT_ENSET | HS_ACT_ENSET;
 	v4l2_dbg(1, debug, sd, "%s: %sable\n", __func__, en ? "en" : "dis");
 	/* clr irq */
-	regmap_write(csi->hdmirx_regmap, HDMI_RX_MD_ICLR, 0xffffffff);
-	regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_ICLR, 0xffffffff);
-
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_MD_ICLR, md_mask);
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_ICLR, pdec_mask);
 	if (en) {
-		regmap_write(csi->hdmirx_regmap, HDMI_RX_MD_IEN_SET,
-			VACT_LIN_ENSET | HACT_PIX_ENSET);
-		regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_SET,
-				AVI_RCV_ENSET);
+		regmap_write(csi->hdmirx_regmap, HDMI_RX_MD_IEN_SET, md_mask);
+		regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_SET, pdec_mask);
+		csi->vid_ints_en = true;
 	} else {
-		regmap_write(csi->hdmirx_regmap, HDMI_RX_MD_IEN_CLR,
-				0xffffffff);
-		regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_CLR,
-				0xffffffff);
+		regmap_write(csi->hdmirx_regmap, HDMI_RX_MD_IEN_CLR, md_mask);
+		regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_CLR, pdec_mask);
+		regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_IEN_CLR, 0x1f);
+		csi->vid_ints_en = false;
 	}
 	usleep_range(5000, 5000);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_IEN, &md_ien);
+	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN, &pdec_ien);
+	v4l2_dbg(1, debug, sd, "%s MD_IEN:%#x, PDEC_IEN:%#x\n", __func__, md_ien, pdec_ien);
+}
 
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_IEN, &val_a);
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN, &val_b);
-	v4l2_dbg(1, debug, sd, "%s MD_IEN:%#x, PDEC_IEN:%#x\n",
-			__func__, val_a, val_b);
+static void rk628_csi_isr_ctsn(struct v4l2_subdev *sd, u32 pdec_ints)
+{
+	struct rk628_csi *csi = to_csi(sd);
+	u32 ctsn_mask = ACR_N_CHG_ICLR | ACR_CTS_CHG_ICLR;
+
+	v4l2_dbg(1, debug, sd, "%s: pdec_ints:%#x\n", __func__, pdec_ints);
+	/* cts & n both need update but maybe come diff int */
+	if (pdec_ints & ACR_N_CHG_ICLR)
+		csi->audio_state.ctsn_flag |= ACR_N_CHG_ICLR;
+	if (pdec_ints & ACR_CTS_CHG_ICLR)
+		csi->audio_state.ctsn_flag |= ACR_CTS_CHG_ICLR;
+	if (csi->audio_state.ctsn_flag == ctsn_mask) {
+		v4l2_dbg(1, debug, sd, "%s: ctsn updated, disable ctsn int\n", __func__);
+		regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_CLR, ctsn_mask);
+		csi->ctsn_ints_en = false;
+		schedule_delayed_work(&csi->delayed_work_audio_rate_change, 0);
+	}
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_ICLR, pdec_ints & ctsn_mask);
+}
+
+static void rk628_csi_isr_fifoints(struct v4l2_subdev *sd, u32 fifo_ints)
+{
+	struct rk628_csi *csi = to_csi(sd);
+	u32 fifo_mask = AFIF_OVERFL_ISTS | AFIF_UNDERFL_ISTS;
+
+	v4l2_dbg(1, debug, sd, "%s: fifo_ints:%#x\n", __func__, fifo_ints);
+	/* cts & n both need update but maybe come diff int */
+	if (fifo_ints & AFIF_OVERFL_ISTS) {
+		v4l2_dbg(1, debug, sd, "%s: Audio FIFO overflow\n", __func__);
+		csi->audio_state.fifo_flag |= AFIF_OVERFL_ISTS;
+	}
+	if (fifo_ints & AFIF_UNDERFL_ISTS) {
+		v4l2_dbg(1, debug, sd, "%s: Audio FIFO underflow\n", __func__);
+		csi->audio_state.fifo_flag |= AFIF_UNDERFL_ISTS;
+	}
+	if (csi->audio_state.fifo_flag == fifo_mask) {
+		csi->audio_state.fifo_int = true;
+		csi->audio_state.fifo_flag = 0;
+		schedule_delayed_work(&csi->delayed_work_audio_rate_change, 0);
+	}
+	regmap_write(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_ICLR, fifo_ints & fifo_mask);
 }
 
 static int rk628_csi_isr(struct v4l2_subdev *sd, u32 status, bool *handled)
 {
-	u32 md_ints, pdec_ints, hact, vact;
+	u32 md_ints, pdec_ints, fifo_ints, hact, vact;
 	bool plugin;
 	struct rk628_csi *csi = to_csi(sd);
 
@@ -1372,40 +1736,56 @@ static int rk628_csi_isr(struct v4l2_subdev *sd, u32 status, bool *handled)
 		v4l2_err(sd, "handled NULL, err return!\n");
 		return -EINVAL;
 	}
-
-	regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_ISTS, &md_ints);
 	regmap_read(csi->hdmirx_regmap, HDMI_RX_PDEC_ISTS, &pdec_ints);
-	plugin = tx_5v_power_present(sd);
-	v4l2_dbg(1, debug, sd, "%s: md_ints: %#x, pdec_ints:%#x, plugin: %d\n",
-		__func__, md_ints, pdec_ints, plugin);
-
-	if ((md_ints & (VACT_LIN_ISTS | HACT_PIX_ISTS)) && plugin) {
-		regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_HACT_PX, &hact);
-		regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_VAL, &vact);
-		v4l2_dbg(1, debug, sd, "%s: HACT:%#x, VACT:%#x\n",
-				__func__, hact, vact);
-
-		rk628_csi_enable_interrupts(sd, false);
-		enable_stream(sd, false);
-		csi->nosignal = true;
-		schedule_delayed_work(&csi->delayed_work_res_change, HZ / 2);
-
-		v4l2_dbg(1, debug, sd, "%s: hact/vact change, md_ints: %#x\n",
-				__func__, (u32)(md_ints & (VACT_LIN_ISTS |
-					HACT_PIX_ISTS)));
-		*handled = true;
+	if (csi->ctsn_ints_en) {
+		if (pdec_ints & (ACR_N_CHG_ICLR | ACR_CTS_CHG_ICLR)) {
+			rk628_csi_isr_ctsn(sd, pdec_ints);
+			pdec_ints &= ~(ACR_CTS_CHG_ICLR | ACR_CTS_CHG_ICLR);
+			*handled = true;
+		}
 	}
-
-	if ((pdec_ints | AVI_RCV_ISTS) && plugin) {
-		v4l2_dbg(1, debug, sd, "%s: AVI RCV INT!\n", __func__);
-		csi->avi_rcv_rdy = true;
-		/* After get the AVI_RCV interrupt state, disable interrupt. */
-		regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_CLR,
-				0xffffffff);
-
-		*handled = true;
+	if (csi->fifo_ints_en) {
+		regmap_read(csi->hdmirx_regmap, HDMI_RX_AUD_FIFO_ISTS, &fifo_ints);
+		if (fifo_ints & 0x18) {
+			rk628_csi_isr_fifoints(sd, fifo_ints);
+			*handled = true;
+		}
 	}
+	if (csi->vid_ints_en) {
+		regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_ISTS, &md_ints);
+		plugin = tx_5v_power_present(sd);
+		v4l2_dbg(1, debug, sd, "%s: md_ints: %#x, pdec_ints:%#x, plugin: %d\n",
+			 __func__, md_ints, pdec_ints, plugin);
 
+		if ((md_ints & (VACT_LIN_ISTS | HACT_PIX_ISTS |
+				HS_CLK_ISTS | DE_ACTIVITY_ISTS |
+				VS_ACT_ISTS | HS_ACT_ISTS))
+				&& plugin) {
+
+			regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_HACT_PX, &hact);
+			regmap_read(csi->hdmirx_regmap, HDMI_RX_MD_VAL, &vact);
+			v4l2_dbg(1, debug, sd, "%s: HACT:%#x, VACT:%#x\n",
+				 __func__, hact, vact);
+
+			rk628_csi_enable_interrupts(sd, false);
+			enable_stream(sd, false);
+			csi->nosignal = true;
+			schedule_delayed_work(&csi->delayed_work_res_change, HZ / 2);
+
+			v4l2_dbg(1, debug, sd, "%s: hact/vact change, md_ints: %#x\n",
+				 __func__, (u32)(md_ints & (VACT_LIN_ISTS | HACT_PIX_ISTS)));
+			*handled = true;
+		}
+
+		if ((pdec_ints & AVI_RCV_ISTS) && plugin) {
+			v4l2_dbg(1, debug, sd, "%s: AVI RCV INT!\n", __func__);
+			csi->avi_rcv_rdy = true;
+			/* After get the AVI_RCV interrupt state, disable interrupt. */
+			regmap_write(csi->hdmirx_regmap, HDMI_RX_PDEC_IEN_CLR, AVI_RCV_ISTS);
+
+			*handled = true;
+		}
+	}
 	if (*handled != true)
 		v4l2_dbg(1, debug, sd, "%s: unhandled interrupt!\n", __func__);
 
@@ -1533,8 +1913,11 @@ static int rk628_csi_query_dv_timings(struct v4l2_subdev *sd,
 		struct v4l2_dv_timings *timings)
 {
 	int ret;
+	struct rk628_csi *csi = to_csi(sd);
 
+	mutex_lock(&csi->confctl_mutex);
 	ret = rk628_csi_get_detected_timings(sd, timings);
+	mutex_unlock(&csi->confctl_mutex);
 	if (ret)
 		return ret;
 
@@ -2181,8 +2564,11 @@ static long rk628_csi_compat_ioctl32(struct v4l2_subdev *sd,
 		}
 
 		ret = rk628_csi_ioctl(sd, cmd, inf);
-		if (!ret)
+		if (!ret) {
 			ret = copy_to_user(up, inf, sizeof(*inf));
+			if (ret)
+				ret = -EFAULT;
+		}
 		kfree(inf);
 		break;
 
@@ -2297,6 +2683,7 @@ static int rk628_csi_probe_of(struct rk628_csi *csi)
 	struct v4l2_fwnode_endpoint *endpoint;
 	struct device_node *ep;
 	int ret = -EINVAL;
+	bool hdcp1x_enable = false;
 
 	csi->clk_hdmirx = devm_clk_get(dev, "hdmirx");
 	if (IS_ERR(csi->clk_hdmirx)) {
@@ -2346,6 +2733,15 @@ static int rk628_csi_probe_of(struct rk628_csi *csi)
 		dev_err(dev, "failed to get clk_csi0: %d\n", ret);
 		return ret;
 	}
+
+	csi->clk_i2s_mclk = devm_clk_get_optional(dev, "i2s_mclk");
+	if (IS_ERR(csi->clk_i2s_mclk)) {
+		ret = PTR_ERR(csi->clk_i2s_mclk);
+		dev_err(dev, "failed to get i2s_mclk: %d\n", ret);
+		return ret;
+	}
+	if (csi->clk_i2s_mclk == NULL)
+		dev_warn(dev, "i2s_mclk is not configured\n");
 
 	csi->rst_hdmirx = of_reset_control_get(dev->of_node, "hdmirx");
 	if (IS_ERR(csi->rst_hdmirx)) {
@@ -2423,6 +2819,9 @@ static int rk628_csi_probe_of(struct rk628_csi *csi)
 		return ret;
 	}
 
+	if (of_property_read_bool(dev->of_node, "hdcp-enable"))
+		hdcp1x_enable = true;
+
 	ep = of_graph_get_next_endpoint(dev->of_node, NULL);
 	if (!ep) {
 		dev_err(dev, "missing endpoint node\n");
@@ -2442,7 +2841,7 @@ static int rk628_csi_probe_of(struct rk628_csi *csi)
 	}
 
 	csi->csi_lanes_in_use = endpoint->bus.mipi_csi2.num_data_lanes;
-	csi->enable_hdcp = false;
+	csi->enable_hdcp = hdcp1x_enable;
 	csi->rxphy_pwron = false;
 	csi->txphy_pwron = false;
 	csi->nosignal = true;
@@ -2486,6 +2885,7 @@ static const struct regmap_range rk628_hdmirx_readable_ranges[] = {
 	regmap_reg_range(HDMI_RX_HDMI_MODE_RECOVER, HDMI_RX_HDMI_ERROR_PROTECT),
 	regmap_reg_range(HDMI_RX_HDMI_SYNC_CTRL, HDMI_RX_HDMI_CKM_RESULT),
 	regmap_reg_range(HDMI_RX_HDMI_RESMPL_CTRL, HDMI_RX_HDMI_RESMPL_CTRL),
+	regmap_reg_range(HDMI_VM_CFG_CH2, HDMI_VM_CFG_CH2),
 	regmap_reg_range(HDMI_RX_HDCP_CTRL, HDMI_RX_HDCP_SETTINGS),
 	regmap_reg_range(HDMI_RX_HDCP_KIDX, HDMI_RX_HDCP_KIDX),
 	regmap_reg_range(HDMI_RX_HDCP_DBG, HDMI_RX_HDCP_AN0),
@@ -2501,8 +2901,10 @@ static const struct regmap_range rk628_hdmirx_readable_ranges[] = {
 	regmap_reg_range(HDMI_RX_AUD_CHEXTR_CTRL, HDMI_RX_AUD_PAO_CTRL),
 	regmap_reg_range(HDMI_RX_AUD_FIFO_STS, HDMI_RX_AUD_FIFO_STS),
 	regmap_reg_range(HDMI_RX_AUDPLL_GEN_CTS, HDMI_RX_AUDPLL_GEN_N),
+	regmap_reg_range(HDMI_RX_PDEC_CTRL, HDMI_RX_PDEC_CTRL),
 	regmap_reg_range(HDMI_RX_PDEC_AUDIODET_CTRL, HDMI_RX_PDEC_AUDIODET_CTRL),
 	regmap_reg_range(HDMI_RX_PDEC_ERR_FILTER, HDMI_RX_PDEC_ASP_CTRL),
+	regmap_reg_range(HDMI_RX_PDEC_GCP_AVMUTE, HDMI_RX_PDEC_GCP_AVMUTE),
 	regmap_reg_range(HDMI_RX_PDEC_ACR_CTS, HDMI_RX_PDEC_ACR_N),
 	regmap_reg_range(HDMI_RX_PDEC_AIF_CTRL, HDMI_RX_PDEC_AIF_PB0),
 	regmap_reg_range(HDMI_RX_PDEC_AVI_PB, HDMI_RX_PDEC_AVI_PB),
@@ -2702,6 +3104,8 @@ static int rk628_csi_probe(struct platform_device *pdev)
 			rk628_csi_delayed_work_enable_hotplug);
 	INIT_DELAYED_WORK(&csi->delayed_work_res_change,
 			rk628_delayed_work_res_change);
+	INIT_DELAYED_WORK(&csi->delayed_work_audio_rate_change,
+			rk628_csi_delayed_work_audio_rate_change);
 	INIT_DELAYED_WORK(&csi->delayed_work_audio,
 			rk628_csi_delayed_work_audio);
 	rk628_csi_initial_setup(sd);
@@ -2741,7 +3145,6 @@ static int rk628_csi_probe(struct platform_device *pdev)
 		goto err_work_queues;
 	}
 
-	rk628_csi_enable_interrupts(sd, tx_5v_power_present(sd));
 	err = v4l2_ctrl_handler_setup(sd->ctrl_handler);
 	if (err) {
 		v4l2_err(sd, "v4l2 ctrl handler setup failed! err:%d\n", err);
@@ -2759,6 +3162,7 @@ err_work_queues:
 	cancel_delayed_work(&csi->delayed_work_enable_hotplug);
 	cancel_delayed_work(&csi->delayed_work_res_change);
 	cancel_delayed_work(&csi->delayed_work_audio);
+	cancel_delayed_work(&csi->delayed_work_audio_rate_change);
 err_hdl:
 	mutex_destroy(&csi->confctl_mutex);
 	media_entity_cleanup(&sd->entity);
@@ -2778,6 +3182,7 @@ static int rk628_csi_remove(struct platform_device *pdev)
 	cancel_delayed_work_sync(&csi->delayed_work_enable_hotplug);
 	cancel_delayed_work_sync(&csi->delayed_work_res_change);
 	cancel_delayed_work_sync(&csi->delayed_work_audio);
+	cancel_delayed_work_sync(&csi->delayed_work_audio_rate_change);
 
 	if (csi->rxphy_pwron)
 		phy_power_off(csi->rxphy);
@@ -2804,6 +3209,7 @@ static int rk628_csi_remove(struct platform_device *pdev)
 	clk_disable_unprepare(csi->clk_vop);
 	clk_disable_unprepare(csi->clk_rx_read);
 	clk_disable_unprepare(csi->clk_csi0);
+	clk_disable_unprepare(csi->clk_i2s_mclk);
 
 	return 0;
 }

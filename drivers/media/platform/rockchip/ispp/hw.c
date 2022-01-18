@@ -61,7 +61,11 @@ void rkispp_soft_reset(struct rkispp_hw_dev *hw)
 	writel(OTHER_FORCE_UPD, hw->base_addr + RKISPP_CTRL_UPDATE);
 	writel(GATE_DIS_ALL, hw->base_addr + RKISPP_CTRL_CLKGATE);
 	writel(SW_FEC2DDR_DIS, hw->base_addr + RKISPP_FEC_CORE_CTRL);
-	writel(0x6ffffff, hw->base_addr + RKISPP_CTRL_INT_MSK);
+	writel(NR_LOST_ERR | TNR_LOST_ERR | FBCH_EMPTY_NR |
+		FBCH_EMPTY_TNR | FBCD_DEC_ERR_NR | FBCD_DEC_ERR_TNR |
+		BUS_ERR_NR | BUS_ERR_TNR | SCL2_INT | SCL1_INT |
+		SCL0_INT | FEC_INT | ORB_INT | SHP_INT | NR_INT | TNR_INT,
+		hw->base_addr + RKISPP_CTRL_INT_MSK);
 	writel(GATE_DIS_NR, hw->base_addr + RKISPP_CTRL_CLKGATE);
 }
 
@@ -227,6 +231,7 @@ static int rkispp_hw_probe(struct platform_device *pdev)
 	struct rkispp_hw_dev *hw_dev;
 	struct resource *res;
 	int i, ret, irq;
+	bool is_mem_reserved = true;
 
 	match = of_match_node(rkispp_hw_of_match, node);
 	if (IS_ERR(match))
@@ -322,26 +327,31 @@ static int rkispp_hw_probe(struct platform_device *pdev)
 	atomic_set(&hw_dev->refcnt, 0);
 	INIT_LIST_HEAD(&hw_dev->list);
 	hw_dev->is_idle = true;
-	hw_dev->is_single = true;
+	hw_dev->is_single = false;
 	hw_dev->is_fec_ext = false;
 	hw_dev->is_dma_contig = true;
+	hw_dev->is_dma_sg_ops = false;
 	hw_dev->is_shutdown = false;
 	hw_dev->is_first = true;
-	hw_dev->first_frame_dma = -1;
 	hw_dev->is_mmu = is_iommu_enable(dev);
 	ret = of_reserved_mem_device_init(dev);
 	if (ret) {
+		is_mem_reserved = false;
 		if (!hw_dev->is_mmu)
-			dev_warn(dev, "No reserved memory region. default cma area!\n");
+			dev_info(dev, "No reserved memory region. default cma area!\n");
 		else
 			hw_dev->is_dma_contig = false;
 	}
-	if (!hw_dev->is_mmu)
-		hw_dev->mem_ops = &vb2_dma_contig_memops;
-	else if (!hw_dev->is_dma_contig)
-		hw_dev->mem_ops = &vb2_dma_sg_memops;
-	else
+	if (is_mem_reserved) {
+		/* reserved memory using rdma_sg */
 		hw_dev->mem_ops = &vb2_rdma_sg_memops;
+		hw_dev->is_dma_sg_ops = true;
+	} else if (hw_dev->is_mmu) {
+		hw_dev->mem_ops = &vb2_dma_sg_memops;
+		hw_dev->is_dma_sg_ops = true;
+	} else {
+		hw_dev->mem_ops = &vb2_dma_contig_memops;
+	}
 
 	rkispp_register_fec(hw_dev);
 	pm_runtime_enable(&pdev->dev);

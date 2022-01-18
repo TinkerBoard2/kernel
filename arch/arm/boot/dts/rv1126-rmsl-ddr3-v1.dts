@@ -154,6 +154,19 @@
 	status = "okay";
 	clock-frequency = <400000>;
 
+	dw9718: dw9718@0c {
+		compatible = "dongwoon,dw9718";
+		status = "okay";
+		reg = <0x0c>;
+		rockchip,vcm-start-current = <20>;
+		rockchip,vcm-rated-current = <54>;
+		rockchip,vcm-step-mode = <4>;
+		rockchip,vcm-sacdiv-mode = <2>;
+		rockchip,vcm-control-mode = <3>;
+		rockchip,camera-module-index = <1>;
+		rockchip,camera-module-facing = "front";
+	};
+
 	ov02k10: ov02k10@36 {
 		compatible = "ovti,ov02k10";
 		reg = <0x36>;
@@ -171,6 +184,7 @@
 		rockchip,camera-module-lens-name = "xuye";
 		// NO_HDR:0 HDR_X2:5 HDR_X3:6
 		rockchip,camera-hdr-mode = <0>;
+		lens-focus = <&dw9718>;
 		port {
 			ucam_out1: endpoint {
 				remote-endpoint = <&mipi_in_ucam1>;
@@ -197,6 +211,26 @@
 				data-lanes = <1 2>;
 			};
 		};
+	};
+};
+
+&i2c2 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <275>;
+	i2c-scl-falling-time-ns = <16>;
+	clock-frequency = <400000>;
+
+	ltr507als: ltr507@3a {
+		status = "okay";
+		compatible = "ltr507als";
+		reg = <0x3a>;
+		rockchip,pwr-gpio = <&gpio3 RK_PA0 GPIO_ACTIVE_HIGH>;
+		irq-gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ltr507_irq_gpios>;
+
+		interrupt-parent = <&gpio0>;
+		interrupts = <16 IRQ_TYPE_LEVEL_HIGH>;
 	};
 };
 
@@ -277,4 +311,11 @@
 				<0 RK_PA0 1 &pcfg_pull_none>;
 		};
 	};
+	ltr507als_gpio {
+		ltr507_irq_gpios: ltr507-irq-gpios {
+			rockchip,pins =
+				<0 RK_PC0 0 &pcfg_pull_up>;
+		};
+	};
 };
+

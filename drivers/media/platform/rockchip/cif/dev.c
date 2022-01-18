@@ -91,11 +91,81 @@ static ssize_t rkcif_store_compact_mode(struct device *dev,
 
 	return len;
 }
+
+static ssize_t rkcif_show_line_int_num(struct device *dev,
+					      struct device_attribute *attr,
+					      char *buf)
+{
+	struct rkcif_device *cif_dev = (struct rkcif_device *)dev_get_drvdata(dev);
+	int ret;
+
+	ret = snprintf(buf, PAGE_SIZE, "%d\n",
+		       cif_dev->wait_line_cache);
+	return ret;
+}
+
+static ssize_t rkcif_store_line_int_num(struct device *dev,
+					       struct device_attribute *attr,
+					       const char *buf, size_t len)
+{
+	struct rkcif_device *cif_dev = (struct rkcif_device *)dev_get_drvdata(dev);
+	int val = 0;
+	int ret = 0;
+
+	ret = kstrtoint(buf, 0, &val);
+	if (!ret && val >= 0 && val <= 0x3fff)
+		cif_dev->wait_line_cache = val;
+	else
+		dev_info(cif_dev->dev, "set line int num failed\n");
+	return len;
+}
+
+static ssize_t rkcif_show_dummybuf_mode(struct device *dev,
+					      struct device_attribute *attr,
+					      char *buf)
+{
+	struct rkcif_device *cif_dev = (struct rkcif_device *)dev_get_drvdata(dev);
+	int ret;
+
+	ret = snprintf(buf, PAGE_SIZE, "%d\n",
+		       cif_dev->is_use_dummybuf);
+	return ret;
+}
+
+static ssize_t rkcif_store_dummybuf_mode(struct device *dev,
+					       struct device_attribute *attr,
+					       const char *buf, size_t len)
+{
+	struct rkcif_device *cif_dev = (struct rkcif_device *)dev_get_drvdata(dev);
+	int val = 0;
+	int ret = 0;
+
+	ret = kstrtoint(buf, 0, &val);
+	if (!ret) {
+		if (val)
+			cif_dev->is_use_dummybuf = true;
+		else
+			cif_dev->is_use_dummybuf = false;
+	} else {
+		dev_info(cif_dev->dev, "set dummy buf mode failed\n");
+	}
+	return len;
+}
+
 static DEVICE_ATTR(compact_test, S_IWUSR | S_IRUSR,
 		   rkcif_show_compact_mode, rkcif_store_compact_mode);
 
+static DEVICE_ATTR(wait_line, S_IWUSR | S_IRUSR,
+		   rkcif_show_line_int_num, rkcif_store_line_int_num);
+
+static DEVICE_ATTR(is_use_dummybuf, S_IWUSR | S_IRUSR,
+		   rkcif_show_dummybuf_mode, rkcif_store_dummybuf_mode);
+
+
 static struct attribute *dev_attrs[] = {
 	&dev_attr_compact_test.attr,
+	&dev_attr_wait_line.attr,
+	&dev_attr_is_use_dummybuf.attr,
 	NULL,
 };
 
@@ -584,6 +654,7 @@ static int rkcif_create_links(struct rkcif_device *dev)
 
 static int _set_pipeline_default_fmt(struct rkcif_device *dev)
 {
+	rkcif_set_default_fmt(dev);
 	return 0;
 }
 
@@ -1002,6 +1073,8 @@ static void rkcif_init_reset_monitor(struct rkcif_device *dev)
 	timer->csi2_err_cnt_odd = 0;
 	timer->csi2_err_fs_fe_cnt = 0;
 	timer->csi2_err_fs_fe_detect_cnt = 0;
+	timer->csi2_err_triggered_cnt = 0;
+	timer->csi2_first_err_timestamp = 0;
 
 	timer_setup(&timer->timer, rkcif_reset_watchdog_timer_handler, 0);
 
@@ -1058,6 +1131,12 @@ int rkcif_plat_init(struct rkcif_device *cif_dev, struct device_node *node, int 
 	cif_dev->workmode = RKCIF_WORKMODE_ONEFRAME;
 #else
 	cif_dev->workmode = RKCIF_WORKMODE_PINGPONG;
+#endif
+
+#if defined(CONFIG_ROCKCHIP_CIF_USE_DUMMY_BUF)
+	cif_dev->is_use_dummybuf = true;
+#else
+	cif_dev->is_use_dummybuf = false;
 #endif
 
 	strlcpy(cif_dev->media_dev.model, dev_name(dev),
@@ -1149,6 +1228,19 @@ static const struct of_device_id rkcif_plat_of_match[] = {
 	{},
 };
 
+static void rkcif_parse_dts(struct rkcif_device *cif_dev)
+{
+	int ret = 0;
+	struct device_node *node = cif_dev->dev->of_node;
+
+	ret = of_property_read_u32(node,
+			     OF_CIF_WAIT_LINE,
+			     &cif_dev->wait_line);
+	if (ret != 0)
+		cif_dev->wait_line = 0;
+	dev_info(cif_dev->dev, "rkcif wait line %d\n", cif_dev->wait_line);
+}
+
 static int rkcif_plat_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
@@ -1177,16 +1269,18 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	dev_set_drvdata(dev, cif_dev);
 	cif_dev->dev = dev;
 
-	if (sysfs_create_group(&pdev->dev.kobj, &dev_attr_grp))
-		return -ENODEV;
-
 	rkcif_attach_hw(cif_dev);
+
+	rkcif_parse_dts(cif_dev);
 
 	ret = rkcif_plat_init(cif_dev, node, data->inf_id);
 	if (ret) {
 		rkcif_detach_hw(cif_dev);
 		return ret;
 	}
+
+	if (sysfs_create_group(&pdev->dev.kobj, &dev_attr_grp))
+		return -ENODEV;
 
 	if (rkcif_proc_init(cif_dev))
 		dev_warn(dev, "dev:%s create proc failed\n", dev_name(dev));
@@ -1206,6 +1300,7 @@ static int rkcif_plat_remove(struct platform_device *pdev)
 	rkcif_detach_hw(cif_dev);
 	rkcif_proc_cleanup(cif_dev);
 	rkcif_csi2_unregister_notifier(&cif_dev->reset_notifier);
+	sysfs_remove_group(&pdev->dev.kobj, &dev_attr_grp);
 	del_timer_sync(&cif_dev->reset_watchdog_timer.timer);
 
 	return 0;

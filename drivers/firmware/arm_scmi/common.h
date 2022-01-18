@@ -15,6 +15,8 @@
 #include <linux/scmi_protocol.h>
 #include <linux/types.h>
 
+#include <asm/unaligned.h>
+
 #define PROTOCOL_REV_MINOR_MASK	GENMASK(15, 0)
 #define PROTOCOL_REV_MAJOR_MASK	GENMASK(31, 16)
 #define PROTOCOL_REV_MAJOR(x)	(u16)(FIELD_GET(PROTOCOL_REV_MAJOR_MASK, (x)))
@@ -151,6 +153,30 @@ void scmi_setup_protocol_implemented(const struct scmi_handle *handle,
 				     u8 *prot_imp);
 
 int scmi_base_protocol_init(struct scmi_handle *h);
+
+int __init scmi_bus_init(void);
+void __exit scmi_bus_exit(void);
+
+#define DECLARE_SCMI_REGISTER_UNREGISTER(func)		\
+	int __init scmi_##func##_register(void);	\
+	void __exit scmi_##func##_unregister(void)
+DECLARE_SCMI_REGISTER_UNREGISTER(clock);
+DECLARE_SCMI_REGISTER_UNREGISTER(perf);
+DECLARE_SCMI_REGISTER_UNREGISTER(power);
+DECLARE_SCMI_REGISTER_UNREGISTER(reset);
+DECLARE_SCMI_REGISTER_UNREGISTER(sensors);
+DECLARE_SCMI_REGISTER_UNREGISTER(system);
+
+#define DEFINE_SCMI_PROTOCOL_REGISTER_UNREGISTER(id, name) \
+int __init scmi_##name##_register(void) \
+{ \
+	return scmi_protocol_register((id), &scmi_##name##_protocol_init); \
+} \
+\
+void __exit scmi_##name##_unregister(void) \
+{ \
+	scmi_protocol_unregister((id)); \
+}
 
 /* SCMI Transport */
 /**

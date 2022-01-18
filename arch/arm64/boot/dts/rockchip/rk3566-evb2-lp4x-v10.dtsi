@@ -7,6 +7,7 @@
 /dts-v1/;
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/display/media-bus-format.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 #include "rk3566.dtsi"
 #include "rk3566-evb.dtsi"
@@ -14,17 +15,6 @@
 / {
 	model = "Rockchip RK3566 EVB2 LP4X V10 Board";
 	compatible = "rockchip,rk3566-evb2-lp4x-v10", "rockchip,rk3566";
-
-	pcie20_3v3: gpio-regulator {
-		compatible = "regulator-gpio";
-		regulator-name = "pcie20_3v3";
-		regulator-min-microvolt = <100000>;
-		regulator-max-microvolt = <3300000>;
-		gpios = <&gpio0 RK_PC2 GPIO_ACTIVE_HIGH>;
-		gpios-states = <0x1>;
-		states = <100000 0x0
-			  3300000 0x1>;
-	};
 
 	rk_headset: rk-headset {
 		compatible = "rockchip_headset";
@@ -42,6 +32,17 @@
 		enable-active-high;
 		regulator-always-on;
 		regulator-boot-on;
+	};
+
+	vcc3v3_pcie: gpio-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pcie";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PC2 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <5000>;
+		vin-supply = <&dc_12v>;
 	};
 };
 
@@ -167,7 +168,7 @@
 };
 
 /*
- * mipi_dphy0 needs to be enabled
+ * video_phy0 needs to be enabled
  * when dsi0 is enabled
  */
 &dsi0 {
@@ -190,7 +191,7 @@
 };
 
 /*
- * mipi_dphy1 needs to be enabled
+ * video_phy1 needs to be enabled
  * when dsi1 is enabled
  */
 &dsi1 {
@@ -406,17 +407,17 @@
 	};
 };
 
-&mipi_dphy0 {
+&video_phy0 {
 	status = "okay";
 };
 
-&mipi_dphy1 {
+&video_phy1 {
 	status = "disabled";
 };
 
 &pcie2x1 {
 	reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie20_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
@@ -595,4 +596,3 @@
 	BT,wake_host_irq = <&gpio2 RK_PC0 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
-

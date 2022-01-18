@@ -24,7 +24,7 @@
 			reg = <0x00200000 0x00008000>;
 		};
 
-		ramoops@210000 {
+		thunderboot_ramoops: ramoops@210000 {
 			compatible = "ramoops";
 			reg = <0x00210000 0x000f0000>;
 			record-size = <0x20000>;
@@ -66,9 +66,6 @@
 			      "clk_scr1_rtc", "clk_scr1_jtag",
 			      "csiphy0_pclk";
 		power-domains = <&power RV1126_PD_VI>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&mipicsi_clk0>;
 		status = "okay";
 	};
 };

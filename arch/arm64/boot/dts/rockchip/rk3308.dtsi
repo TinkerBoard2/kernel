@@ -345,7 +345,6 @@
 		rockchip,sleep-mode-config = <
 			(0
 			| RKPM_PMU_HW_PLLS_PD
-			| RKPM_DBG_FSM_SOUT
 			)
 		>;
 		rockchip,wakeup-config = <
@@ -1097,7 +1096,7 @@
 	};
 
 	pdm_8ch: pdm@ff380000 {
-		compatible = "rockchip,rk3308-pdm", "rockchip,pdm";
+		compatible = "rockchip,rk3308-pdm";
 		reg = <0x0 0xff380000 0x0 0x1000>;
 		clocks = <&cru SCLK_PDM>, <&cru HCLK_PDM>;
 		clock-names = "pdm_clk", "pdm_hclk";

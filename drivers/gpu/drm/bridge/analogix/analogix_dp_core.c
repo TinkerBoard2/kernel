@@ -509,11 +509,25 @@ static void analogix_dp_get_adjust_training_lane(struct analogix_dp_device *dp,
 	}
 }
 
+static bool analogix_dp_tps3_supported(struct analogix_dp_device *dp)
+{
+	bool source_tps3_supported, sink_tps3_supported;
+	u8 dpcd = 0;
+
+	source_tps3_supported =
+		dp->video_info.max_link_rate == DP_LINK_BW_5_4;
+	drm_dp_dpcd_readb(&dp->aux, DP_MAX_LANE_COUNT, &dpcd);
+	sink_tps3_supported = dpcd & DP_TPS3_SUPPORTED;
+
+	return source_tps3_supported && sink_tps3_supported;
+}
+
 static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 {
 	int lane, lane_count, retval;
 	u8 voltage_swing, pre_emphasis, training_lane;
 	u8 link_status[2], adjust_request[2];
+	u8 training_pattern = TRAINING_PTN2;
 
 	usleep_range(100, 101);
 
@@ -529,12 +543,16 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 		return retval;
 
 	if (analogix_dp_clock_recovery_ok(link_status, lane_count) == 0) {
-		/* set training pattern 2 for EQ */
-		analogix_dp_set_training_pattern(dp, TRAINING_PTN2);
+		if (analogix_dp_tps3_supported(dp))
+			training_pattern = TRAINING_PTN3;
+
+		/* set training pattern for EQ */
+		analogix_dp_set_training_pattern(dp, training_pattern);
 
 		retval = drm_dp_dpcd_writeb(&dp->aux, DP_TRAINING_PATTERN_SET,
 					    DP_LINK_SCRAMBLING_DISABLE |
-						DP_TRAINING_PATTERN_2);
+					    (training_pattern == TRAINING_PTN3 ?
+					     DP_TRAINING_PATTERN_3 : DP_TRAINING_PATTERN_2));
 		if (retval < 0)
 			return retval;
 
@@ -1240,12 +1258,6 @@ static int analogix_dp_set_bridge(struct analogix_dp_device *dp)
 
 	pm_runtime_get_sync(dp->dev);
 
-	ret = clk_prepare_enable(dp->clock);
-	if (ret < 0) {
-		DRM_ERROR("Failed to prepare_enable the clock clk [%d]\n", ret);
-		goto out_dp_clk_pre;
-	}
-
 	if (dp->plat_data->power_on_start)
 		dp->plat_data->power_on_start(dp->plat_data);
 
@@ -1285,8 +1297,6 @@ out_dp_init:
 	analogix_dp_phy_power_off(dp);
 	if (dp->plat_data->power_off)
 		dp->plat_data->power_off(dp->plat_data);
-	clk_disable_unprepare(dp->clock);
-out_dp_clk_pre:
 	pm_runtime_put_sync(dp->dev);
 
 	return ret;
@@ -1336,8 +1346,6 @@ static void analogix_dp_bridge_disable(struct drm_bridge *bridge)
 	analogix_dp_reset_aux(dp);
 	analogix_dp_set_analog_power_down(dp, POWER_ALL, 1);
 	analogix_dp_phy_power_off(dp);
-
-	clk_disable_unprepare(dp->clock);
 
 	pm_runtime_put_sync(dp->dev);
 
@@ -1496,9 +1504,12 @@ static int analogix_dp_dt_parse_pdata(struct analogix_dp_device *dp)
 	switch (dp->plat_data->dev_type) {
 	case RK3288_DP:
 	case RK3368_EDP:
-	case RK3399_EDP:
 	case RK3568_EDP:
 		video_info->max_link_rate = 0x0A;
+		video_info->max_lane_count = 0x04;
+		break;
+	case RK3399_EDP:
+		video_info->max_link_rate = 0x14;
 		video_info->max_lane_count = 0x04;
 		break;
 	case EXYNOS_DP:
@@ -1620,14 +1631,6 @@ analogix_dp_bind(struct device *dev, struct drm_device *drm_dev,
 		}
 	}
 
-	dp->clock = devm_clk_get(&pdev->dev, "dp");
-	if (IS_ERR(dp->clock)) {
-		dev_err(&pdev->dev, "failed to get clock\n");
-		return ERR_CAST(dp->clock);
-	}
-
-	clk_prepare_enable(dp->clock);
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	dp->reg_base = devm_ioremap_resource(&pdev->dev, res);
@@ -1721,15 +1724,12 @@ void analogix_dp_unbind(struct analogix_dp_device *dp)
 
 	drm_dp_aux_unregister(&dp->aux);
 	pm_runtime_disable(dp->dev);
-	clk_disable_unprepare(dp->clock);
 }
 EXPORT_SYMBOL_GPL(analogix_dp_unbind);
 
 #ifdef CONFIG_PM
 int analogix_dp_suspend(struct analogix_dp_device *dp)
 {
-	clk_disable_unprepare(dp->clock);
-
 	if (dp->plat_data->panel) {
 		if (drm_panel_unprepare(dp->plat_data->panel))
 			DRM_ERROR("failed to turnoff the panel\n");
@@ -1741,14 +1741,6 @@ EXPORT_SYMBOL_GPL(analogix_dp_suspend);
 
 int analogix_dp_resume(struct analogix_dp_device *dp)
 {
-	int ret;
-
-	ret = clk_prepare_enable(dp->clock);
-	if (ret < 0) {
-		DRM_ERROR("Failed to prepare_enable the clock clk [%d]\n", ret);
-		return ret;
-	}
-
 	if (dp->plat_data->panel) {
 		if (drm_panel_prepare(dp->plat_data->panel)) {
 			DRM_ERROR("failed to setup the panel\n");

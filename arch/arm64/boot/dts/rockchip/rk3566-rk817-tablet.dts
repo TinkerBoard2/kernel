@@ -214,6 +214,12 @@
 	};
 };
 
+&bus_npu {
+	bus-supply = <&vdd_logic>;
+	pvtm-supply = <&vdd_cpu>;
+	status = "okay";
+};
+
 &cpu0 {
 	cpu-supply = <&vdd_cpu>;
 };
@@ -920,7 +926,7 @@
 	status = "okay";
 };
 
-&mipi_dphy0 {
+&video_phy0 {
 	status = "okay";
 };
 
@@ -993,12 +999,12 @@
 
 		soc_slppin_gpio: soc_slppin_gpio {
 			rockchip,pins =
-				<0 RK_PA2 RK_FUNC_GPIO &pcfg_output_low>;
+				<0 RK_PA2 RK_FUNC_GPIO &pcfg_output_low_pull_down>;
 		};
 
 		soc_slppin_slp: soc_slppin_slp {
 			rockchip,pins =
-				<0 RK_PA2 1 &pcfg_pull_none>;
+				<0 RK_PA2 1 &pcfg_pull_up>;
 		};
 
 		soc_slppin_rst: soc_slppin_rst {
@@ -1115,7 +1121,6 @@
 	bus-width = <8>;
 	supports-emmc;
 	non-removable;
-	rockchip,txclk-tapnum = <0x8>;
 	max-frequency = <200000000>;
 	status = "okay";
 };

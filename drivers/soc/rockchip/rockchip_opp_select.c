@@ -22,7 +22,6 @@
 
 #define MAX_PROP_NAME_LEN	6
 #define SEL_TABLE_END		~1
-#define LEAKAGE_INVALID		0xff
 #define AVS_DELETE_OPP		0
 #define AVS_SCALING_RATE	1
 
@@ -120,34 +119,48 @@ static const struct lkg_conversion_table conv_table[] = {
 	{ 400, 53 },
 };
 
-int rockchip_get_efuse_value(struct device_node *np, char *porp_name,
-			     int *value)
+static int rockchip_nvmem_cell_read_common(struct device_node *np,
+					   const char *cell_id,
+					   void *val, size_t count)
 {
 	struct nvmem_cell *cell;
-	unsigned char *buf;
+	void *buf;
 	size_t len;
 
-	cell = of_nvmem_cell_get(np, porp_name);
+	cell = of_nvmem_cell_get(np, cell_id);
 	if (IS_ERR(cell))
 		return PTR_ERR(cell);
 
-	buf = (unsigned char *)nvmem_cell_read(cell, &len);
-
-	nvmem_cell_put(cell);
-
-	if (IS_ERR(buf))
+	buf = nvmem_cell_read(cell, &len);
+	if (IS_ERR(buf)) {
+		nvmem_cell_put(cell);
 		return PTR_ERR(buf);
-
-	if (buf[0] == LEAKAGE_INVALID)
+	}
+	if (len != count) {
+		kfree(buf);
+		nvmem_cell_put(cell);
 		return -EINVAL;
-
-	*value = buf[0];
-
+	}
+	memcpy(val, buf, count);
 	kfree(buf);
+	nvmem_cell_put(cell);
 
 	return 0;
 }
-EXPORT_SYMBOL(rockchip_get_efuse_value);
+
+int rockchip_nvmem_cell_read_u8(struct device_node *np, const char *cell_id,
+				u8 *val)
+{
+	return rockchip_nvmem_cell_read_common(np, cell_id, val, sizeof(*val));
+}
+EXPORT_SYMBOL(rockchip_nvmem_cell_read_u8);
+
+int rockchip_nvmem_cell_read_u16(struct device_node *np, const char *cell_id,
+				 u16 *val)
+{
+	return rockchip_nvmem_cell_read_common(np, cell_id, val, sizeof(*val));
+}
+EXPORT_SYMBOL(rockchip_nvmem_cell_read_u16);
 
 static int rockchip_get_sel_table(struct device_node *np, char *porp_name,
 				  struct sel_table **table)
@@ -281,8 +294,6 @@ static int rockchip_get_bin_sel(struct device_node *np, char *name,
 static int rockchip_parse_pvtm_config(struct device_node *np,
 				      struct pvtm_config *pvtm)
 {
-	if (!of_find_property(np, "rockchip,pvtm-voltage-sel", NULL))
-		return -EINVAL;
 	if (of_property_read_u32(np, "rockchip,pvtm-freq", &pvtm->freq))
 		return -EINVAL;
 	if (of_property_read_u32(np, "rockchip,pvtm-volt", &pvtm->volt))
@@ -326,22 +337,11 @@ static int rockchip_get_pvtm_specific_value(struct device *dev,
 {
 	struct pvtm_config *pvtm;
 	unsigned long old_freq;
-	unsigned int old_volt, ch[2];
+	unsigned int old_volt;
 	int cur_temp, diff_temp;
 	int cur_value, total_value, avg_value, diff_value;
 	int min_value, max_value;
 	int ret = 0, i = 0, retry = 2;
-
-	if (of_property_read_u32_array(np, "rockchip,pvtm-ch", ch, 2))
-		return -EINVAL;
-
-	if (ch[0] >= PVTM_CH_MAX || ch[1] >= PVTM_SUB_CH_MAX)
-		return -EINVAL;
-
-	if (pvtm_value[ch[0]][ch[1]]) {
-		*target_value = pvtm_value[ch[0]][ch[1]];
-		return 0;
-	}
 
 	pvtm = kzalloc(sizeof(*pvtm), GFP_KERNEL);
 	if (!pvtm)
@@ -473,7 +473,8 @@ static int rockchip_adjust_leakage(struct device *dev, struct device_node *np,
 				   int *leakage)
 {
 	struct nvmem_cell *cell;
-	u32 value = 0, temp;
+	u8 value = 0;
+	u32 temp;
 	int conversion;
 	int ret;
 
@@ -481,7 +482,7 @@ static int rockchip_adjust_leakage(struct device *dev, struct device_node *np,
 	if (IS_ERR(cell))
 		goto next;
 	nvmem_cell_put(cell);
-	ret = rockchip_get_efuse_value(np, "leakage_temp", &value);
+	ret = rockchip_nvmem_cell_read_u8(np, "leakage_temp", &value);
 	if (ret) {
 		dev_err(dev, "Failed to get leakage temp\n");
 		return -EINVAL;
@@ -493,7 +494,8 @@ static int rockchip_adjust_leakage(struct device *dev, struct device_node *np,
 	 * The ambient temp : temp = (temp_efuse / 63) * (40 - 20) + 20
 	 * Reserves a decimal point : temp = temp * 10
 	 */
-	temp = mul_frac((int_to_frac(value) / 63 * 20 + int_to_frac(20)),
+	temp = value;
+	temp = mul_frac((int_to_frac(temp) / 63 * 20 + int_to_frac(20)),
 			int_to_frac(10));
 	conversion = temp_to_conversion_rate(frac_to_int(temp));
 	*leakage = *leakage * conversion / 100;
@@ -503,7 +505,7 @@ next:
 	if (IS_ERR(cell))
 		return 0;
 	nvmem_cell_put(cell);
-	ret = rockchip_get_efuse_value(np, "leakage_volt", &value);
+	ret = rockchip_nvmem_cell_read_u8(np, "leakage_volt", &value);
 	if (ret) {
 		dev_err(dev, "Failed to get leakage volt\n");
 		return -EINVAL;
@@ -539,16 +541,19 @@ static int rockchip_get_leakage_v1(struct device *dev, struct device_node *np,
 {
 	struct nvmem_cell *cell;
 	int ret = 0;
+	u8 value = 0;
 
 	cell = of_nvmem_cell_get(np, "leakage");
 	if (IS_ERR(cell)) {
-		ret = rockchip_get_efuse_value(np, lkg_name, leakage);
+		ret = rockchip_nvmem_cell_read_u8(np, lkg_name, &value);
 	} else {
 		nvmem_cell_put(cell);
-		ret = rockchip_get_efuse_value(np, "leakage", leakage);
+		ret = rockchip_nvmem_cell_read_u8(np, "leakage", &value);
 	}
 	if (ret)
 		dev_err(dev, "Failed to get %s\n", lkg_name);
+	else
+		*leakage = value;
 
 	return ret;
 }
@@ -689,33 +694,65 @@ next:
 }
 EXPORT_SYMBOL(rockchip_of_get_lkg_sel);
 
-void rockchip_of_get_pvtm_sel(struct device *dev, struct device_node *np,
-			      char *reg_name, int process,
-			      int *volt_sel, int *scale_sel)
+
+static int rockchip_get_pvtm(struct device *dev, struct device_node *np,
+			     char *reg_name)
 {
-	struct property *prop = NULL;
 	struct regulator *reg;
 	struct clk *clk;
-	int pvtm = -EINVAL, ret;
-	char name[NAME_MAX];
+	unsigned int ch[2];
+	int pvtm = 0;
+	u16 tmp = 0;
+
+	if (!rockchip_nvmem_cell_read_u16(np, "pvtm", &tmp) && tmp) {
+		pvtm = 10 * tmp;
+		dev_info(dev, "pvtm = %d, from nvmem\n", pvtm);
+		return pvtm;
+	}
+
+	if (of_property_read_u32_array(np, "rockchip,pvtm-ch", ch, 2))
+		return -EINVAL;
+
+	if (ch[0] >= PVTM_CH_MAX || ch[1] >= PVTM_SUB_CH_MAX)
+		return -EINVAL;
+
+	if (pvtm_value[ch[0]][ch[1]]) {
+		dev_info(dev, "pvtm = %d, form pvtm_value\n", pvtm_value[ch[0]][ch[1]]);
+		return pvtm_value[ch[0]][ch[1]];
+	}
 
 	clk = clk_get(dev, NULL);
 	if (IS_ERR_OR_NULL(clk)) {
 		dev_warn(dev, "Failed to get clk\n");
-		return;
+		return PTR_ERR_OR_ZERO(clk);
 	}
 
 	reg = regulator_get_optional(dev, reg_name);
 	if (IS_ERR_OR_NULL(reg)) {
 		dev_warn(dev, "Failed to get reg\n");
-		goto clk_err;
+		clk_put(clk);
+		return PTR_ERR_OR_ZERO(reg);
 	}
 
-	ret = rockchip_get_pvtm_specific_value(dev, np, clk, reg, &pvtm);
-	if (ret) {
-		dev_err(dev, "Failed to get pvtm\n");
-		goto out;
-	}
+	rockchip_get_pvtm_specific_value(dev, np, clk, reg, &pvtm);
+
+	regulator_put(reg);
+	clk_put(clk);
+
+	return pvtm;
+}
+
+void rockchip_of_get_pvtm_sel(struct device *dev, struct device_node *np,
+			      char *reg_name, int process,
+			      int *volt_sel, int *scale_sel)
+{
+	struct property *prop = NULL;
+	char name[NAME_MAX];
+	int pvtm, ret;
+
+	pvtm = rockchip_get_pvtm(dev, np, reg_name);
+	if (pvtm <= 0)
+		return;
 
 	if (!volt_sel)
 		goto next;
@@ -732,7 +769,7 @@ void rockchip_of_get_pvtm_sel(struct device *dev, struct device_node *np,
 
 next:
 	if (!scale_sel)
-		goto out;
+		return;
 	if (process >= 0) {
 		snprintf(name, sizeof(name),
 			 "rockchip,p%d-pvtm-scaling-sel", process);
@@ -743,11 +780,6 @@ next:
 	ret = rockchip_get_sel(np, name, pvtm, scale_sel);
 	if (!ret)
 		dev_info(dev, "pvtm-scale=%d\n", *scale_sel);
-
-out:
-	regulator_put(reg);
-clk_err:
-	clk_put(clk);
 }
 EXPORT_SYMBOL(rockchip_of_get_pvtm_sel);
 
@@ -940,6 +972,37 @@ out:
 	return ret;
 }
 
+static void rockchip_adjust_opp_by_mbist_vmin(struct device *dev,
+					      struct device_node *np)
+{
+	struct opp_table *opp_table;
+	struct dev_pm_opp *opp;
+	u32 vmin = 0;
+	u8 index = 0;
+
+	if (rockchip_nvmem_cell_read_u8(np, "mbist-vmin", &index))
+		return;
+
+	if (!index)
+		return;
+
+	if (of_property_read_u32_index(np, "mbist-vmin", index-1, &vmin))
+		return;
+
+	opp_table = dev_pm_opp_get_opp_table(dev);
+	if (!opp_table)
+		return;
+
+	mutex_lock(&opp_table->lock);
+	list_for_each_entry(opp, &opp_table->opp_list, node) {
+		if (opp->supplies->u_volt < vmin) {
+			opp->supplies->u_volt = vmin;
+			opp->supplies->u_volt_min = vmin;
+		}
+	}
+	mutex_unlock(&opp_table->lock);
+}
+
 static int rockchip_adjust_opp_table(struct device *dev,
 				     unsigned long scale_rate)
 {
@@ -986,6 +1049,7 @@ int rockchip_adjust_power_scale(struct device *dev, int scale)
 	of_property_read_u32(np, "rockchip,avs-enable", &avs);
 	of_property_read_u32(np, "rockchip,avs", &avs);
 	of_property_read_u32(np, "rockchip,avs-scale", &avs_scale);
+	rockchip_adjust_opp_by_mbist_vmin(dev, np);
 	rockchip_adjust_opp_by_irdrop(dev, np, &safe_rate, &max_rate);
 
 	dev_info(dev, "avs=%d\n", avs);

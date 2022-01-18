@@ -155,7 +155,7 @@ static void isp21_show(struct rkisp_device *dev, struct seq_file *p)
 		(val & 1) ? "ON" : "OFF", val,
 		effect[(val & CIF_IMG_EFF_CTRL_MODE_MASK) >> 1]);
 	val = rkisp_read(dev, ISP21_DRC_CTRL0, false);
-	seq_printf(p, "%-10s %s(0x%x)\n", "HDRTMO", (val & 1) ? "ON" : "OFF", val);
+	seq_printf(p, "%-10s %s(0x%x)\n", "HDRDRC", (val & 1) ? "ON" : "OFF", val);
 	val = rkisp_read(dev, ISP_HDRMGE_CTRL, false);
 	seq_printf(p, "%-10s %s(0x%x)\n", "HDRMGE", (val & 1) ? "ON" : "OFF", val);
 	val = rkisp_read(dev, ISP21_BAYNR_CTRL, false);
@@ -245,26 +245,28 @@ static int isp_show(struct seq_file *p, void *v)
 		   sdev->in_crop.width, sdev->in_crop.height, val,
 		   sdev->in_crop.left, sdev->in_crop.top);
 	if (IS_HDR_RDBK(dev->hdr.op_mode))
-		seq_printf(p, "%-10s mode:frame%d (frame:%d rate:%dms %s time:%dms) cnt(total:%d X1:%d X2:%d X3:%d)\n",
+		seq_printf(p, "%-10s mode:frame%d (frame:%d rate:%dms %s time:%dms frameloss:%d) cnt(total:%d X1:%d X2:%d X3:%d)\n",
 			   "Isp Read",
 			   dev->rd_mode - 3,
 			   dev->dmarx_dev.cur_frame.id,
 			   (u32)(dev->dmarx_dev.cur_frame.timestamp - dev->dmarx_dev.pre_frame.timestamp) / 1000 / 1000,
 			   (dev->isp_state & ISP_FRAME_END) ? "idle" : "working",
 			   sdev->dbg.interval / 1000 / 1000,
+			   sdev->dbg.frameloss,
 			   dev->rdbk_cnt,
 			   dev->rdbk_cnt_x1,
 			   dev->rdbk_cnt_x2,
 			   dev->rdbk_cnt_x3);
 	else
-		seq_printf(p, "%-10s frame:%d %s time:%dms\n",
+		seq_printf(p, "%-10s frame:%d %s time:%dms v-blank:%dus\n",
 			   "Isp online",
 			   sdev->dbg.id,
 			   (dev->isp_state & ISP_FRAME_END) ? "idle" : "working",
-			   sdev->dbg.interval / 1000 / 1000);
+			   sdev->dbg.interval / 1000 / 1000,
+			   sdev->dbg.delay / 1000);
 
 	if (dev->br_dev.en)
-		seq_printf(p, "%-10s rkispp%d Format:%s%s Size:%dx%d (frame:%d rate:%dms)\n",
+		seq_printf(p, "%-10s rkispp%d Format:%s%s Size:%dx%d (frame:%d rate:%dms frameloss:%d)\n",
 			   "Output",
 			   dev->dev_id,
 			   (dev->br_dev.work_mode & ISP_ISPP_FBC) ? "FBC" : "YUV",
@@ -272,13 +274,14 @@ static int isp_show(struct seq_file *p, void *v)
 			   dev->br_dev.crop.width,
 			   dev->br_dev.crop.height,
 			   dev->br_dev.dbg.id,
-			   dev->br_dev.dbg.interval / 1000 / 1000);
+			   dev->br_dev.dbg.interval / 1000 / 1000,
+			   dev->br_dev.dbg.frameloss);
 	for (val = 0; val < RKISP_MAX_STREAM; val++) {
 		struct rkisp_stream *stream = &dev->cap_dev.stream[val];
 
 		if (!stream->streaming)
 			continue;
-		seq_printf(p, "%-10s %s Format:%c%c%c%c Size:%dx%d (frame:%d rate:%dms delay:%dms)\n",
+		seq_printf(p, "%-10s %s Format:%c%c%c%c Size:%dx%d (frame:%d rate:%dms delay:%dms frameloss:%d)\n",
 			   "Output",
 			   stream->vnode.vdev.name,
 			   stream->out_fmt.pixelformat,
@@ -289,7 +292,8 @@ static int isp_show(struct seq_file *p, void *v)
 			   stream->out_fmt.height,
 			   stream->dbg.id,
 			   stream->dbg.interval / 1000 / 1000,
-			   stream->dbg.delay / 1000 / 1000);
+			   stream->dbg.delay / 1000 / 1000,
+			   stream->dbg.frameloss);
 	}
 
 	switch (dev->isp_ver) {

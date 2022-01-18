@@ -769,10 +769,6 @@ static void isp_aec_config_v12(struct rkisp_isp_params_vdev *params_vdev,
 static void isp_cproc_config(struct rkisp_isp_params_vdev *params_vdev,
 			     const struct cifisp_cproc_config *arg)
 {
-	struct cifisp_isp_other_cfg *cur_other_cfg =
-		&params_vdev->isp1x_params->others;
-	struct cifisp_ie_config *cur_ie_config = &cur_other_cfg->ie_config;
-	u32 effect = cur_ie_config->effect;
 	u32 quantization = params_vdev->quantization;
 
 	rkisp1_iowrite32(params_vdev, arg->contrast, CIF_C_PROC_CONTRAST);
@@ -780,8 +776,7 @@ static void isp_cproc_config(struct rkisp_isp_params_vdev *params_vdev,
 	rkisp1_iowrite32(params_vdev, arg->sat, CIF_C_PROC_SATURATION);
 	rkisp1_iowrite32(params_vdev, arg->brightness, CIF_C_PROC_BRIGHTNESS);
 
-	if (quantization != V4L2_QUANTIZATION_FULL_RANGE ||
-	    effect != V4L2_COLORFX_NONE) {
+	if (quantization != V4L2_QUANTIZATION_FULL_RANGE) {
 		isp_param_clear_bits(params_vdev, CIF_C_PROC_CTRL,
 				     CIF_C_PROC_YOUT_FULL |
 				     CIF_C_PROC_YIN_FULL |
@@ -2213,12 +2208,6 @@ static void rkisp1_params_first_cfg_v1x(struct rkisp_isp_params_vdev *params_vde
 				   ~CIF_ISP_HIST_PROP_MODE_MASK_V10 |
 				   hst_params_default_config.mode);
 	}
-
-	/* set the  range */
-	if (params_vdev->quantization == V4L2_QUANTIZATION_FULL_RANGE)
-		ops->csm_config(params_vdev, true);
-	else
-		ops->csm_config(params_vdev, false);
 
 	/* disable color related config for grey sensor */
 	if (params_vdev->in_mbus_code == MEDIA_BUS_FMT_Y8_1X8 ||

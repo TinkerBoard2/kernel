@@ -252,29 +252,52 @@
 		vin-supply = <&dc_12v>;
 	};
 
+	vcc5v0_usb: vcc5v0-usb {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_usb";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&dc_12v>;
+	};
+
 	vcc5v0_host: vcc5v0-host-regulator {
 		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_host";
+		regulator-boot-on;
+		regulator-always-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
 		enable-active-high;
 		gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+		vin-supply = <&vcc5v0_usb>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&vcc5v0_host_en>;
-		regulator-name = "vcc5v0_host";
-		regulator-always-on;
 	};
 
 	vcc5v0_otg: vcc5v0-otg-regulator {
 		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_otg";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
 		enable-active-high;
 		gpio = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>;
+		vin-supply = <&vcc5v0_usb>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&vcc5v0_otg_en>;
-		regulator-name = "vcc5v0_otg";
 	};
 
 	vcc3v3_lcd0_n: vcc3v3-lcd0-n {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3_lcd0_n";
 		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
+		vin-supply = <&vcc3v3_sys>;
+
 		regulator-state-mem {
 			regulator-off-in-suspend;
 		};
@@ -284,6 +307,12 @@
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3_lcd1_n";
 		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PC5 GPIO_ACTIVE_HIGH>;
+		vin-supply = <&vcc3v3_sys>;
+
 		regulator-state-mem {
 			regulator-off-in-suspend;
 		};
@@ -331,6 +360,12 @@
 	test-power {
 		status = "okay";
 	};
+};
+
+&bus_npu {
+	bus-supply = <&vdd_logic>;
+	pvtm-supply = <&vdd_cpu>;
+	status = "okay";
 };
 
 &can0 {
@@ -1443,12 +1478,12 @@
 
 		soc_slppin_gpio: soc_slppin_gpio {
 			rockchip,pins =
-				<0 RK_PA2 RK_FUNC_GPIO &pcfg_output_low>;
+				<0 RK_PA2 RK_FUNC_GPIO &pcfg_output_low_pull_down>;
 		};
 
 		soc_slppin_slp: soc_slppin_slp {
 			rockchip,pins =
-				<0 RK_PA2 1 &pcfg_pull_none>;
+				<0 RK_PA2 1 &pcfg_pull_up>;
 		};
 
 		soc_slppin_rst: soc_slppin_rst {
@@ -1488,9 +1523,24 @@
 	};
 };
 
+ /*
+  * There are 10 independent IO domains in RK3566/RK3568, including PMUIO[0:2] and VCCIO[1:7].
+  * 1/ PMUIO0 and PMUIO1 are fixed-level power domains which cannot be configured;
+  * 2/ PMUIO2 and VCCIO1,VCCIO[3:7] domains require that their hardware power supply voltages
+  *    must be consistent with the software configuration correspondingly
+  *	a/ When the hardware IO level is connected to 1.8V, the software voltage configuration
+  *	   should also be configured to 1.8V accordingly;
+  *	b/ When the hardware IO level is connected to 3.3V, the software voltage configuration
+  *	   should also be configured to 3.3V accordingly;
+  * 3/ VCCIO2 voltage control selection (0xFDC20140)
+  *	BIT[0]: 0x0: from GPIO_0A7 (default)
+  *	BIT[0]: 0x1: from GRF
+  *    Default is determined by Pin FLASH_VOL_SEL/GPIO0_A7:
+  *	L:VCCIO2 must supply 3.3V
+  *	H:VCCIO2 must supply 1.8V
+  */
 &pmu_io_domains {
 	status = "okay";
-	pmuio1-supply = <&vcc3v3_pmu>;
 	pmuio2-supply = <&vcc3v3_pmu>;
 	vccio1-supply = <&vccio_acodec>;
 	vccio3-supply = <&vccio_sd>;
@@ -1626,6 +1676,7 @@
 };
 
 &rkvenc {
+	venc-supply = <&vdd_logic>;
 	status = "okay";
 };
 
@@ -1656,7 +1707,6 @@
 	bus-width = <8>;
 	supports-emmc;
 	non-removable;
-	rockchip,txclk-tapnum = <0x8>;
 	max-frequency = <200000000>;
 	status = "okay";
 };

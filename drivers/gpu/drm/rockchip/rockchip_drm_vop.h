@@ -40,6 +40,16 @@
 #define WIN_FEATURE_AFBDC		BIT(3)
 #define WIN_FEATURE_CLUSTER_MAIN	BIT(4)
 #define WIN_FEATURE_CLUSTER_SUB		BIT(5)
+/* a mirror win can only get fb address
+ * from source win:
+ * Cluster1---->Cluster0
+ * Esmart1 ---->Esmart0
+ * Smart1  ---->Smart0
+ * This is a feather on rk3566
+ */
+#define WIN_FEATURE_MIRROR		BIT(6)
+#define WIN_FEATURE_MULTI_AREA		BIT(7)
+
 
 #define VOP2_SOC_VARIANT		4
 
@@ -521,6 +531,7 @@ struct vop2_win_regs {
 	struct vop_reg global_alpha_val;
 	struct vop_reg color_key;
 	struct vop_reg color_key_en;
+	struct vop_reg dither_up;
 };
 
 struct vop2_video_port_regs {
@@ -840,6 +851,7 @@ struct vop2_data {
 	uint8_t nr_mixers;
 	uint8_t nr_layers;
 	uint8_t nr_axi_intr;
+	uint8_t nr_gammas;
 	const struct vop_intr *axi_intr;
 	const struct vop2_ctrl *ctrl;
 	const struct vop2_win_data *win;
