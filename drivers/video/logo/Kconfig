@@ -67,4 +67,8 @@ config LOGO_SUPERH_CLUT224
 	depends on SUPERH
 	default y
 
+config LOGO_TINKER_CLUT224
+	bool "224-color Tinker logo"
+	default y
+
 endif # LOGO
