@@ -4,6 +4,8 @@
 #include <linux/of_platform.h>
 #include <linux/of_gpio.h>
 #include <linux/proc_fs.h>
+#include <linux/delay.h>
+#include <linux/boardinfo.h>
 
 static int hwid = -1, pid = -1, ddrid = -1;
 
@@ -93,6 +95,21 @@ static int ddr_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+int pmic_restart(void)
+{
+	printk("pmic_reset number = %d\n", pmic_reset);
+	printk("pmic_reset value1 = %d\n", gpio_get_value(pmic_reset));
+	gpio_set_value(pmic_reset, 0);
+	mdelay(100);
+	printk("pmic_reset value2 = %d\n", gpio_get_value(pmic_reset));
+	gpio_set_value(pmic_reset, 1);
+	mdelay(100);
+	printk("pmic_reset value3 = %d\n", gpio_get_value(pmic_reset));
+
+	return 0;
+}
+EXPORT_SYMBOL(pmic_restart);
+
 static int ver_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, ver_show, NULL);
@@ -170,6 +187,7 @@ static int board_info_probe(struct platform_device *pdev)
 	int ddr_id1, ddr_id2;
 
 	int id0, id1, id2;
+	int pmic_reset;
 
 	hw_id0 = of_get_named_gpio(dev->of_node, "hw-id0", 0);
 	if (!gpio_is_valid(hw_id0)) {
@@ -291,6 +309,20 @@ static int board_info_probe(struct platform_device *pdev)
 
 	gpio_free(ddr_id1);
 	gpio_free(ddr_id2);
+
+	gpio_free(pmic_reset);
+
+	pmic_reset = of_get_named_gpio(dev->of_node, "pmic-reset", 0);
+	if (!gpio_is_valid(pmic_reset)) {
+		printk("No pmic_reset pin available in board-info\n");
+		return -ENODEV;
+	} else {
+		ret = devm_gpio_request_one(dev, pmic_reset, GPIOF_OUT_INIT_LOW, "PMIC_RESET");
+		if (ret < 0) {
+			printk("Fail to set pmic_reset pin\n");
+			return ret;
+		}
+	}
 
 	file = proc_create("boardver", 0444, NULL, &boardver_ops);
 	if (!file)
