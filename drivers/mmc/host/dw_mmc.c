@@ -41,8 +41,10 @@
 #include <linux/of_gpio.h>
 #include <linux/mmc/slot-gpio.h>
 #include <linux/soc/rockchip/rockchip_decompress.h>
+#include <linux/reboot.h>
 
 #include "dw_mmc.h"
+#include "../core/core.h"
 
 /* Common flag combinations */
 #define DW_MCI_DATA_ERROR_FLAGS	(SDMMC_INT_DRTO | SDMMC_INT_DCRC | \
@@ -2841,6 +2843,24 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+struct dw_mci *mSdhost;
+void setmmcEmergency() {
+	struct mmc_host *mmc = mSdhost->slot->mmc;
+	int ret;
+
+	mmc_power_off(mmc);
+	mdelay(20);
+
+	if (!IS_ERR(mmc->supply.vmmc)) {
+		ret = regulator_enable(mmc->supply.vmmc);
+	}
+
+	if (!IS_ERR(mmc->supply.vqmmc))
+		regulator_set_voltage(mmc->supply.vqmmc, 3000000, 3300000);
+
+}
+EXPORT_SYMBOL(setmmcEmergency);
+
 static int dw_mci_init_slot_caps(struct dw_mci_slot *slot)
 {
 	struct dw_mci *host = slot->host;
@@ -2917,6 +2937,9 @@ static int dw_mci_init_slot(struct dw_mci *host)
 	host->slot = slot;
 
 	mmc->ops = &dw_mci_ops;
+
+	if (of_find_property(host->dev->of_node, "supports-sd", NULL))
+		mSdhost = host;
 
 	/*if there are external regulators, get them*/
 	ret = mmc_regulator_get_supply(mmc);
