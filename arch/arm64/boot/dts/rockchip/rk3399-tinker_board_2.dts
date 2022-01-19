@@ -329,6 +329,11 @@
 	status = "disabled";
 };
 
+&route_hdmi {
+	status = "okay";
+	connect = <&vopb_out_hdmi>;
+};
+
 &edp {
 	status = "disabled";
 	force-hpd;
@@ -349,11 +354,14 @@
 };
 
 &hdmi {
-	pinctrl-names = "default";
 	pinctrl-0 = <&hdmi_i2c_xfer>, <&hdmi_cec>;
-	#address-cells = <1>;
-	#size-cells = <0>;
 	#sound-dai-cells = <0>;
+	rockchip,phy-table =
+		<74250000  0x8009 0x0004 0x0272>,
+		<165000000 0x802b 0x0004 0x0209>,
+		<297000000 0x8039 0x0005 0x028d>,
+		<594000000 0x8039 0x0000 0x00f6>,
+		<000000000 0x0000 0x0000 0x0000>;
 	status = "okay";
 };
 
@@ -419,7 +427,7 @@
 &vopb {
 	status = "okay";
 	assigned-clocks = <&cru DCLK_VOP0_DIV>;
-	assigned-clock-parents = <&cru PLL_CPLL>;
+	assigned-clock-parents = <&cru PLL_VPLL>;
 };
 
 &vopb_mmu {
