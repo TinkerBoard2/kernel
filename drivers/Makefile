@@ -23,6 +23,9 @@ obj-$(CONFIG_RAPIDIO)		+= rapidio/
 obj-y				+= video/
 obj-y				+= idle/
 
+# boardinfo must come after gpio
+obj-$(CONFIG_BOARDINFO)         += boardinfo/
+
 # IPMI must come before ACPI in order to provide IPMI opregion support
 obj-y				+= char/ipmi/
 
