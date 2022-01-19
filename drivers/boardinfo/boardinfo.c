@@ -8,6 +8,7 @@
 #include <linux/boardinfo.h>
 
 static int hwid = -1, pid = -1, ddrid = -1;
+static int pmic_reset;
 
 static const struct of_device_id of_board_info_match[] = {
 	{ .compatible = "board-info", },
@@ -187,7 +188,6 @@ static int board_info_probe(struct platform_device *pdev)
 	int ddr_id1, ddr_id2;
 
 	int id0, id1, id2;
-	int pmic_reset;
 
 	hw_id0 = of_get_named_gpio(dev->of_node, "hw-id0", 0);
 	if (!gpio_is_valid(hw_id0)) {
@@ -310,8 +310,6 @@ static int board_info_probe(struct platform_device *pdev)
 	gpio_free(ddr_id1);
 	gpio_free(ddr_id2);
 
-	gpio_free(pmic_reset);
-
 	pmic_reset = of_get_named_gpio(dev->of_node, "pmic-reset", 0);
 	if (!gpio_is_valid(pmic_reset)) {
 		printk("No pmic_reset pin available in board-info\n");
@@ -365,6 +363,7 @@ EXPORT_SYMBOL_GPL(get_project_id);
 
 static int board_info_remove(struct platform_device *pdev)
 {
+	gpio_free(pmic_reset);
 	return 0;
 }
 
