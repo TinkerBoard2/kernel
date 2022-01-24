@@ -1409,6 +1409,13 @@ config TOUCHSCREEN_FT5436
 	  Say Y here if you have Focaltech touch panel.
 	  If unsure, say N.
 
+config TOUCHSCREEN_TINKER_FT5406
+	tristate "tinker ft5406"
+	default y
+	depends on I2C
+	help
+	  Control ft5406 touch ic.
+
 source "drivers/input/touchscreen/cyttsp5/Kconfig"
 
 endif
