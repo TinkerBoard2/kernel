@@ -63,6 +63,7 @@
 
 	panel: panel {
 		compatible = "simple-panel";
+		status = "disabled";
 		backlight = <&backlight>;
 		power-supply = <&vcc_lcd>;
 		enable-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
@@ -311,7 +312,7 @@
 };
 
 &backlight {
-	status = "okay";
+	status = "disabled";
 	enable-gpios = <&gpio4 29 GPIO_ACTIVE_HIGH>;
 };
 
@@ -334,6 +335,40 @@
 	connect = <&vopb_out_hdmi>;
 };
 
+&dsi {
+	status = "okay";
+	panel@0 {
+		compatible ="asus-dsi-panel";
+		reg = <0>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+
+				panel_in_dsi: endpoint {
+					remote-endpoint = <&dsi_out_panel>;
+				};
+			};
+		};
+	};
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@1 {
+			reg = <1>;
+
+			dsi_out_panel: endpoint {
+				remote-endpoint = <&panel_in_dsi>;
+			};
+		};
+	};
+};
+
 &edp {
 	status = "disabled";
 	force-hpd;
@@ -349,7 +384,35 @@
 	};
 };
 
+&dsi_in_vopl {
+	status = "okay";
+};
+
+&dsi_in_vopb {
+	status = "disabled";
+};
+
+&dsi1 {
+	status = "disabled";
+};
+
+&dsi1_in_vopl {
+	status = "disabled";
+};
+
+&dsi1_in_vopb {
+	status = "disabled";
+};
+
+&edp {
+	status = "disabled";
+};
+
 &edp_in_vopb {
+	status = "disabled";
+};
+
+&edp_in_vopl {
 	status = "disabled";
 };
 

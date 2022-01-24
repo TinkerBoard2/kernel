@@ -977,6 +977,16 @@
 		compatible = "at,24c08";
 		reg = <0x50>;
 	};
+
+	tinker_mcu: tinker_mcu@45 {
+		compatible = "tinker_mcu";
+		reg = <0x45>;
+	};
+
+	tinker_mcu_ili9881c: tinker_mcu_ili9881c@36 {
+		compatible = "tinker_mcu_ili9881c";
+		reg = <0x36>;
+	};
 };
 
 &pcie0 {
@@ -1136,13 +1146,11 @@
 		isp_dvp_d0d7: isp-dvp-d0d7 {
 			rockchip,pins =
 				<4 RK_PD3 RK_FUNC_GPIO &pcfg_pull_none>,
-				/* cif_clkout */
-				<2 RK_PB3 3 &pcfg_pull_none>,
 				/* cif_data0 */
 				<2 RK_PA0 3 &pcfg_pull_none>,
-				/* cif_data1 */
+				/*cif_data1*/
 				<2 RK_PA1 3 &pcfg_pull_none>,
-				/* cif_data2 */
+				/*cif_data2*/
 				<2 RK_PA2 3 &pcfg_pull_none>,
 				/* cif_data3 */
 				<2 RK_PA3 3 &pcfg_pull_none>,
