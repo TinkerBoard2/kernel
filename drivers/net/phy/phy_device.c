@@ -1232,12 +1232,21 @@ static int gen10g_config_init(struct phy_device *phydev)
 int genphy_suspend(struct phy_device *phydev)
 {
 	int value;
+	int retry = 3;
 
 	mutex_lock(&phydev->lock);
 
 	value = phy_read(phydev, MII_BMCR);
 	phy_write(phydev, MII_BMCR, value | BMCR_PDOWN);
+	while (retry) {
+		value = phy_read(phydev, MII_BMCR);
+		printk("%s: #### MII_BMCR: 0x%04X , retry = %d\n", __func__, value, retry);
+		if (value & BMCR_PDOWN)
+			break;
 
+		phy_write(phydev, MII_BMCR, value | BMCR_PDOWN);
+		retry--;
+	}
 	mutex_unlock(&phydev->lock);
 
 	return 0;
