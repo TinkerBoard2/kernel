@@ -8,6 +8,7 @@ obj-$(CONFIG_RTL8723DS)	+= rtl8723ds/
 obj-$(CONFIG_RTL8821CS) += rtl8821cs/
 obj-$(CONFIG_RTL8822BS) += rtl8822bs/
 obj-$(CONFIG_RTL8822CE) += rtl8822ce/
+obj-$(CONFIG_RTL8852BE)	+= rtl8852be/
 obj-$(CONFIG_MVL88W8977)	+= mvl88w8977/
 obj-$(CONFIG_WL_ROCKCHIP)	+= rkwifi/rk_wifi_config.o
 obj-$(CONFIG_CYW_BCMDHD)	+= cywdhd/
