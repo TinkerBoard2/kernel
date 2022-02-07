@@ -416,6 +416,10 @@
 	status = "disabled";
 };
 
+&dp_in_vopb {
+	status = "disabled";
+};
+
 &hdmi {
 	pinctrl-0 = <&hdmi_i2c_xfer>, <&hdmi_cec>;
 	#sound-dai-cells = <0>;
