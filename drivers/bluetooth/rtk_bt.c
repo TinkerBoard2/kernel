@@ -35,7 +35,7 @@
 #include "rtk_bt.h"
 #include "rtk_misc.h"
 
-#define VERSION "3.1.523c92e.20210706-141239"
+#define VERSION "3.1.32e1d0b.20210819-170430"
 
 #ifdef BTCOEX
 #include "rtk_coex.h"
