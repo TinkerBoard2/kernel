@@ -318,6 +318,7 @@ struct tcpm_port {
 	enum typec_cc_status cc2;
 	enum typec_cc_polarity polarity;
 
+	bool extcon_usb_ss;
 	bool extcon_hpd;
         enum usb_role extcon_usb_role;
         enum typec_orientation extcon_orientation;
@@ -946,25 +947,21 @@ static int tcpm_mux_set(struct tcpm_port *port, int state,
 {
 	int ret = 0;
 	union extcon_property_value property;
-	bool usb_ss = false, dp = false, hpd = false;
+	bool usb_ss = false, hpd = false;
 
-	if (state == TYPEC_MODE_USB2 ||
-            state == TYPEC_MODE_USB3 ||
-            state == TYPEC_MODE_USB4)
-		if (port->data)
-			dp = true;
-
-	if (dp) {
+	if (state >= TYPEC_STATE_MODAL && port->data) {
 		usb_ss = !! (DP_CONF_GET_PIN_ASSIGN(port->data->conf) &
 			     DP_PIN_ASSIGN_MULTI_FUNC_MASK);
 		hpd = !!(port->data->status & DP_STATUS_HPD_STATE);
 	} else if (usb_role != USB_ROLE_NONE)
 		usb_ss = true;
 
-	if (hpd == port->extcon_hpd && usb_role == port->extcon_usb_role
-				    && orientation == port->extcon_orientation)
+	if ( usb_ss == port->extcon_usb_ss && hpd == port->extcon_hpd
+			&& usb_role == port->extcon_usb_role
+			&& orientation == port->extcon_orientation)
 		return 0;
 
+	port->extcon_usb_ss = usb_ss;
 	port->extcon_hpd = hpd;
 	port->extcon_usb_role = usb_role;
 	port->extcon_orientation = orientation;
@@ -4577,6 +4574,8 @@ static void run_state_machine(struct tcpm_port *port)
 		break;
 	/* PR_Swap states */
 	case PR_SWAP_ACCEPT:
+		/* send discover again after power role swap*/
+		port->send_discover = true;
 		tcpm_pd_send_control(port, PD_CTRL_ACCEPT);
 		tcpm_set_state(port, PR_SWAP_START, 0);
 		break;
