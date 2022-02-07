@@ -95,6 +95,10 @@ static int dp_altmode_configure(struct dp_altmode *dp, u8 con)
 		else if (pin_assign & DP_PIN_ASSIGN_DP_ONLY_MASK)
 			pin_assign &= DP_PIN_ASSIGN_DP_ONLY_MASK;
 
+		/* if C/D present they have precedence over E/F for USB-C->USB-C */
+		if (pin_assign & (BIT(DP_PIN_ASSIGN_C) | BIT(DP_PIN_ASSIGN_D)))
+			pin_assign &= ~(BIT(DP_PIN_ASSIGN_E) | BIT(DP_PIN_ASSIGN_F));
+
 		if (!pin_assign)
 			return -EINVAL;
 
