@@ -983,6 +983,72 @@
 		reg = <0x50>;
 	};
 
+	dsi_lvds_bridge: sn65dsi84@2c {
+		compatible = "sn65dsi84";
+		status = "disabled";
+		reg = <0x2c>;
+
+		lvds-clk-rate = <72000000>;
+		lvds-format = <2>;
+		lvds-bpp = <24>;
+		dsi-lanes = <4>;//u-boot
+		sync_delay = <33>;
+		//dual-link;
+		//test-pattern;
+
+		t1=<0>;
+		t2=<1>;
+		t3=<500>;
+		t4=<200>;
+		t5=<1>;
+		t6=<0>;
+		t7=<1000>;
+
+		pinctrl-names = "default";
+		pinctrl-0 =  <&pinctrl_sn65dsi84_en &pinctrl_lvds_vdd_en &pinctrl_sn65dsi84_irq  &pinctrl_pwr_source>;//<&pinctrl_lvds_hdmi_sel>
+
+		/*lvds_hdmi_sel-gpios = <&5 23 GPIO_ACTIVE_HIGH>;*/
+		EN-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
+		lvds_vdd_en-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
+		dsi84_irq-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+		pwr_source-gpios = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+	};
+
+	dsi_edp_bridge: sn65dsi86@2d {
+		compatible = "sn65dsi86";
+		status = "disabled";
+		reg = <0x2d>;
+
+		dsi-lanes = <4>;//u-boot
+		data-lanes-size = <2>;//u-boot
+		bpc=<8>;//u-boot
+		data-lanes = <0 1>;
+		lane-polarities = <0 0 0 0>;
+
+		t1=<0>;
+		t2=<0>;
+		t3=<200>;
+		t4=<20>;
+		t5=<0>;
+		t6=<0>;
+		t7=<0>;
+		t8=<100>;
+		t12= <500>;
+		t14= <15>;//Backlight node:enable_delay = <15>;
+		t15 = <15>;//Backlight node:post-pwm-on-delay-ms = <15>;
+		t16= <15>;//Backlight node:pwm-off-delay-ms = <15>;
+		t17 = <15>;//Backlight node:disable_delay = <15>;
+
+		pinctrl-names = "default";
+		pinctrl-0 =  <&pinctrl_sn65dsi84_en>, <&pinctrl_lvds_vdd_en>, <&pinctrl_sn65dsi84_irq>, <&pinctrl_pwr_source>;//<&pinctrl_lvds_bl_en>;
+
+		EN-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
+		edp_vdd_en-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
+		//dsi86_vbl_en-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+		dsi86_irq-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+		pwr_source-gpios = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+	};
+
 	tinker_mcu: tinker_mcu@45 {
 		compatible = "tinker_mcu";
 		reg = <0x45>;

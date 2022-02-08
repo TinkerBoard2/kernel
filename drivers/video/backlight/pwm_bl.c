@@ -25,15 +25,21 @@
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 
+unsigned int minimal_brightness = 0;
+
 struct pwm_bl_data {
 	struct pwm_device	*pwm;
 	struct device		*dev;
+	unsigned int 		enable_soc_enablekl_delay;
+	unsigned int 		disable_soc_enablekl_delay;
 	unsigned int		period;
 	unsigned int		lth_brightness;
 	unsigned int		*levels;
 	bool			enabled;
 	struct regulator	*power_supply;
 	struct gpio_desc	*enable_gpio;
+	struct gpio_desc	*soc_enablekl;
+	bool power_sequence_reverse;
 	unsigned int		scale;
 	bool			legacy;
 	unsigned int		post_pwm_on_delay;
@@ -57,7 +63,23 @@ static void pwm_backlight_power_on(struct pwm_bl_data *pb, int brightness)
 	if (err < 0)
 		dev_err(pb->dev, "failed to enable power supply\n");
 
+	if (pb->power_sequence_reverse) {
+		if (pb->soc_enablekl)
+			gpiod_set_value_cansleep(pb->soc_enablekl, 1);
+
+		if (pb->enable_soc_enablekl_delay)
+			msleep(pb->enable_soc_enablekl_delay);
+	}
+
 	pwm_enable(pb->pwm);
+
+	if (!pb->power_sequence_reverse) {
+		if (pb->enable_soc_enablekl_delay)
+			msleep(pb->enable_soc_enablekl_delay);
+
+		if (pb->soc_enablekl)
+			gpiod_set_value_cansleep(pb->soc_enablekl, 1);
+	}
 
 	if (pb->post_pwm_on_delay)
 		msleep(pb->post_pwm_on_delay);
@@ -79,8 +101,24 @@ static void pwm_backlight_power_off(struct pwm_bl_data *pb)
 	if (pb->pwm_off_delay)
 		msleep(pb->pwm_off_delay);
 
+	if (!pb->power_sequence_reverse) {
+		if (pb->soc_enablekl)
+			gpiod_set_value_cansleep(pb->soc_enablekl, 0);
+
+		if (pb->disable_soc_enablekl_delay)
+			msleep(pb->disable_soc_enablekl_delay);
+	}
+
 	pwm_config(pb->pwm, 0, pb->period);
 	pwm_disable(pb->pwm);
+
+	if (pb->power_sequence_reverse) {
+		if (pb->disable_soc_enablekl_delay)
+			msleep(pb->disable_soc_enablekl_delay);
+
+		if (pb->soc_enablekl)
+			gpiod_set_value_cansleep(pb->soc_enablekl, 0);
+	}
 
 	regulator_disable(pb->power_supply);
 	pb->enabled = false;
@@ -112,6 +150,10 @@ static int pwm_backlight_update_status(struct backlight_device *bl)
 	    bl->props.fb_blank != FB_BLANK_UNBLANK ||
 	    bl->props.state & BL_CORE_FBBLANK)
 		brightness = 0;
+	else if ((brightness <= minimal_brightness) && (minimal_brightness > 0)) {
+		bl->props.brightness = minimal_brightness;
+		brightness = minimal_brightness;
+	}
 
 	if (pb->notify)
 		brightness = pb->notify(pb->dev, brightness);
@@ -165,7 +207,7 @@ static u64 int_pow(u64 base, int exp)
  *
  * The CIE 1931 lightness formula is what actually describes how we perceive
  * light:
- *          Y = (L* / 902.3)           if L* ≤ 0.08856
+ *          Y = (L* / 902.3)           if L* ??0.08856
  *          Y = ((L* + 16) / 116)^3    if L* > 0.08856
  *
  * Where Y is the luminance, the amount of light coming out of the screen, and
@@ -370,6 +412,8 @@ static int pwm_backlight_parse_dt(struct device *dev,
 		}
 
 		data->max_brightness--;
+                ret = of_property_read_u32(node, "minimal-brightness-level",
+					   &minimal_brightness);
 	}
 
 	return 0;
@@ -415,6 +459,9 @@ static int pwm_backlight_initial_power_state(const struct pwm_bl_data *pb)
 	/* if the enable GPIO is disabled, do not enable the backlight */
 	if (pb->enable_gpio && gpiod_get_value_cansleep(pb->enable_gpio) == 0)
 		return FB_BLANK_POWERDOWN;
+
+        if (pb->soc_enablekl && gpiod_get_value_cansleep(pb->soc_enablekl) == 0)
+	        return FB_BLANK_POWERDOWN;
 
 	/* The regulator is disabled, do not enable the backlight */
 	if (!regulator_is_enabled(pb->power_supply))
@@ -471,10 +518,23 @@ static int pwm_backlight_probe(struct platform_device *pdev)
 	pb->post_pwm_on_delay = data->post_pwm_on_delay;
 	pb->pwm_off_delay = data->pwm_off_delay;
 
+	of_property_read_u32(node, "enable_delay",
+					   &pb->enable_soc_enablekl_delay);
+	of_property_read_u32(node, "disable_delay",
+					   &pb->disable_soc_enablekl_delay);
+	pb->power_sequence_reverse = of_property_read_bool(node, "power-sequence-reverse");
+
 	pb->enable_gpio = devm_gpiod_get_optional(&pdev->dev, "enable",
 						  GPIOD_ASIS);
 	if (IS_ERR(pb->enable_gpio)) {
 		ret = PTR_ERR(pb->enable_gpio);
+		goto err_alloc;
+	}
+
+	pb->soc_enablekl = devm_gpiod_get_optional(&pdev->dev, "soc_enablekl",
+						  GPIOD_OUT_LOW);
+	if (IS_ERR(pb->soc_enablekl)) {
+		ret = PTR_ERR(pb->soc_enablekl);
 		goto err_alloc;
 	}
 
@@ -505,6 +565,10 @@ static int pwm_backlight_probe(struct platform_device *pdev)
 	if (pb->enable_gpio &&
 	    gpiod_get_direction(pb->enable_gpio) != 0)
 		gpiod_direction_output(pb->enable_gpio, 1);
+
+         if (pb->soc_enablekl &&
+	            gpiod_get_direction(pb->soc_enablekl) != 0)
+		gpiod_direction_output(pb->soc_enablekl, 1);
 
 	pb->power_supply = devm_regulator_get(&pdev->dev, "power");
 	if (IS_ERR(pb->power_supply)) {

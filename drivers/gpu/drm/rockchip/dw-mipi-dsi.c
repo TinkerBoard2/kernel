@@ -1264,6 +1264,11 @@ static void dw_mipi_dsi_pre_enable(struct dw_mipi_dsi *dsi)
 		dw_mipi_dsi_pre_enable(dsi->slave);
 }
 
+extern void sn65dsi84_bridge_enable(void);
+extern void sn65dsi86_bridge_enable(void);
+extern  bool sn65dsi84_is_connected(void);
+extern bool sn65dsi86_is_connected(void);
+
 static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 {
 	struct drm_display_mode *mode = &dsi->mode;
@@ -1302,6 +1307,12 @@ static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 
 	regmap_update_bits(dsi->regmap, DSI_LPCLK_CTRL,
 			   PHY_TXREQUESTCLKHS, PHY_TXREQUESTCLKHS);
+
+	if (sn65dsi84_is_connected())
+		sn65dsi84_bridge_enable();
+
+	if (sn65dsi86_is_connected())
+		sn65dsi86_bridge_enable();
 
 	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO)
 		dw_mipi_dsi_set_vid_mode(dsi);
@@ -1549,11 +1560,14 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 	int ret;
 
 #if defined(CONFIG_TINKER_MCU)
-	if(!tinker_mcu_is_connected(dsi->id) && !tinker_mcu_ili9881c_is_connected(dsi->id)) {
-		pr_info("dsi-%d panel isn't connected\n", dsi->id);
+	if(!tinker_mcu_is_connected(dsi->id) &&
+		!tinker_mcu_ili9881c_is_connected(dsi->id) &&
+		!sn65dsi84_is_connected() &&
+		!sn65dsi86_is_connected()) {
+		pr_info("dsi-%d panel and sn65dsi8x isn't connected\n", dsi->id);
 		return 0;
 	} else {
-		pr_info("dsi-%d panel is connected\n", dsi->id);
+		pr_info("dsi-%d panel  or sn65dsi8x is connected\n", dsi->id);
 	}
 #endif
 

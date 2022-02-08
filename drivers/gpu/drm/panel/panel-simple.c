@@ -41,6 +41,18 @@
 
 #include "../rockchip/rockchip_drm_drv.h"
 
+#include "../bridge/sn65dsi8x/sn65dsi84.h"
+#include "../bridge/sn65dsi8x/sn65dsi86.h"
+
+extern void sn65dsi84_loader_protect(bool on);
+extern void sn65dsi84_bridge_disable(void);
+extern bool sn65dsi84_is_connected(void);
+extern void sn65dsi86_loader_protect(bool on);
+extern void sn65dsi86_bridge_disable(void);
+extern bool sn65dsi86_is_connected(void);
+extern struct sn65dsi84_data *g_sn65dsi84;
+extern struct sn65dsi86_data *g_sn65dsi86;
+
 struct panel_cmd_header {
 	u8 data_type;
 	u8 delay;
@@ -518,12 +530,17 @@ static int panel_simple_loader_protect(struct drm_panel *panel, bool on)
 
 		p->prepared = true;
 		p->enabled = true;
-	} else {
-		p->prepared = false;
-		p->enabled = false;
 
+		if (sn65dsi84_is_connected())
+			sn65dsi84_loader_protect(true);
+
+		if (sn65dsi86_is_connected())
+			sn65dsi86_loader_protect(true);
+	} else {
 		#if defined(CONFIG_TINKER_MCU)
 		if (tinker_mcu_is_connected(p->dsi_id)) {
+		p->prepared = false;
+		p->enabled = false;
 			backlight_disable(p->backlight);
 		}
 		#endif
@@ -546,6 +563,12 @@ static int panel_simple_disable(struct drm_panel *panel)
 		p->backlight->props.state |= BL_CORE_FBBLANK;
 		backlight_update_status(p->backlight);
 	}
+
+	if (sn65dsi84_is_connected())
+		sn65dsi84_bridge_disable();
+
+	if (sn65dsi86_is_connected())
+		sn65dsi86_bridge_disable();
 
 	if (p->desc->delay.disable)
 		panel_simple_sleep(p->desc->delay.disable);
@@ -673,6 +696,7 @@ static int panel_simple_enable(struct drm_panel *panel)
 	static bool the_first_time_rpi_enable = true;
 	int err = 0;
 
+	printk("panel_simple_enable p->enabled=%d\n", p->enabled);
 	if (p->enabled)
 		return 0;
 
@@ -772,6 +796,7 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 	const char *cmd_type;
 	int err;
 
+	printk(" panel_simple_probe+\n");
 	panel = devm_kzalloc(dev, sizeof(*panel), GFP_KERNEL);
 	if (!panel)
 		return -ENOMEM;
@@ -866,16 +891,7 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 	panel->power_invert =
 			of_property_read_bool(dev->of_node, "power-invert");
 
-	backlight = of_parse_phandle(dev->of_node, "backlight", 0);
-	if (backlight) {
-		panel->backlight = of_find_backlight_by_node(backlight);
-		of_node_put(backlight);
-
-		if (!panel->backlight)
-			return -EPROBE_DEFER;
-	}
 	#if defined(CONFIG_TINKER_MCU)
-	else {
 		if (tinker_mcu_is_connected(panel->dsi_id)) {
 			panel->backlight =  tinker_mcu_get_backlightdev(panel->dsi_id);
 			if (!panel->backlight) {
@@ -894,8 +910,25 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 
 			panel->backlight->props.brightness = 255;
 			printk("tinker mcu ili9881c get backlight device successful\n");
+	} else {
+		backlight = of_parse_phandle(dev->of_node, "backlight", 0);
+		if (backlight) {
+			panel->backlight = of_find_backlight_by_node(backlight);
+			of_node_put(backlight);
+
+			if (!panel->backlight)
+				return -EPROBE_DEFER;
 		}
 	}
+	#else
+		backlight = of_parse_phandle(dev->of_node, "backlight", 0);
+		if (backlight) {
+			panel->backlight = of_find_backlight_by_node(backlight);
+			of_node_put(backlight);
+
+			if (!panel->backlight)
+				return -EPROBE_DEFER;
+		}
 	#endif
 
 	ddc = of_parse_phandle(dev->of_node, "ddc-i2c-bus", 0);
@@ -918,7 +951,7 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 		goto free_ddc;
 
 	dev_set_drvdata(dev, panel);
-
+	printk("panel_simple_probe-\n");
 	return 0;
 
 free_ddc:
@@ -3280,6 +3313,7 @@ static int panel_simple_of_get_desc_data(struct device *dev,
 		of_property_read_u32(np, "width-mm", &desc->size.width);
 		of_property_read_u32(np, "height-mm", &desc->size.height);
 	}
+	printk("panel_simple_of_get_desc_data bpc=%u bus_format=0x%x, size.width=%u  size.height =%u bus_flags =0x%x\n", desc->bpc, desc->bus_format, desc->size.width, desc->size.height, desc->bus_flags );
 
 	of_property_read_u32(np, "prepare-delay-ms", &desc->delay.prepare);
 	of_property_read_u32(np, "enable-delay-ms", &desc->delay.enable);
@@ -3610,7 +3644,6 @@ static const struct of_device_id dsi_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, dsi_of_match);
 
-#ifndef CONFIG_TINKER_MCU
 static int panel_simple_dsi_of_get_desc_data(struct device *dev,
 					     struct panel_desc_dsi *desc)
 {
@@ -3629,9 +3662,24 @@ static int panel_simple_dsi_of_get_desc_data(struct device *dev,
 	if (!of_property_read_u32(np, "dsi,lanes", &val))
 		desc->lanes = val;
 
+	printk("panel_simple_dsi_of_get_desc_data flags=%lx format=0x%x lanes =%u\n", desc->flags, desc->format, desc->lanes);
 	return 0;
 }
-#endif
+
+void sn65dsi84_setup_desc(struct panel_desc_dsi *desc)
+{
+	drm_display_mode_to_videomode(desc->desc.modes, &g_sn65dsi84->vm);
+	g_sn65dsi84->dsi_lanes = desc->lanes;
+}
+
+void sn65dsi86_setup_desc(struct panel_desc_dsi *desc)
+{
+	drm_display_mode_to_videomode(desc->desc.modes, &g_sn65dsi86->vm);
+	memcpy(&g_sn65dsi86->mode, desc->desc.modes, sizeof(struct drm_display_mode));
+	g_sn65dsi86->dsi_lanes = desc->lanes;
+	g_sn65dsi86->format = desc->format;
+	g_sn65dsi86->bpc = desc->desc.bpc;
+}
 
 static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 {
@@ -3659,6 +3707,22 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 	else if (tinker_mcu_ili9881c_is_connected(dsi_id)) {
 		memcpy(d, &asus_ili9881c_dec, sizeof(asus_ili9881c_dec));
 		panel_simple_of_get_cmd(dev, &d->desc, dsi_id);
+	} else if (sn65dsi84_is_connected()) {
+		err = panel_simple_dsi_of_get_desc_data(dev, d);
+		if (err) {
+			dev_err(dev, "failed to get desc data: %d\n", err);
+			return err;
+		}
+
+		sn65dsi84_setup_desc(d);
+	} else if (sn65dsi86_is_connected()) {
+		err = panel_simple_dsi_of_get_desc_data(dev, d);
+		if (err) {
+			dev_err(dev, "failed to get desc data: %d\n", err);
+			return err;
+		}
+
+		sn65dsi86_setup_desc(d);
 	}
 #else
 	if (!id->data) {
@@ -3701,6 +3765,7 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 
 		drm_panel_remove(&panel->base);
 	}
+	printk("panel_simple_dsi_probe-\n");
 
 	return err;
 }
