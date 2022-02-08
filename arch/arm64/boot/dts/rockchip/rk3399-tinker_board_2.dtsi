@@ -200,10 +200,8 @@
 		clocks = <&rk808 1>;
 		clock-names = "ext_clock";
 		//wifi-bt-power-toggle;
-		uart_rts_gpios = <&gpio2 19 GPIO_ACTIVE_LOW>; /* GPIO2_C3 */
 		pinctrl-names = "default", "rts_gpio";
-		pinctrl-0 = <&uart0_rts>, <&bt_reset_gpio>, <&bt_wake_gpio>, <&bt_irq_gpio>;
-		pinctrl-1 = <&uart0_gpios>;
+		pinctrl-0 = <&bt_reset_gpio>, <&bt_wake_gpio>, <&bt_irq_gpio>;
 		//BT,power_gpio  = <&gpio3 19 GPIO_ACTIVE_HIGH>; /* GPIOx_xx */
 		BT,reset_gpio    = <&gpio0 9 GPIO_ACTIVE_HIGH>; /* GPIO0_B1 */
 		BT,wake_gpio     = <&gpio2 26 GPIO_ACTIVE_HIGH>; /* GPIO2_D2 */
@@ -291,7 +289,6 @@
 			240 241 242 243 244 245 246 247
 			248 249 250 251 252 253 254 255>;
 		default-brightness-level = <200>;
-		pwms = <&pwm0 0 25000 0>;
 	};
 
 	clkin_gmac: external-gmac-clock {
@@ -731,6 +728,14 @@
 	status = "disabled";
 };
 
+&pwm1 {
+        status = "disable";
+};
+
+&pwm3 {
+        status = "disable";
+};
+
 &pwm2 {
 	status = "okay";
 	pinctrl-names = "active";
@@ -814,8 +819,8 @@
 
 &uart0 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&uart0_xfer &uart0_cts>;
-	status = "okay";
+	pinctrl-0 = <&uart0_xfer &uart0_cts &uart0_rts>;
+	status = "disabled";
 };
 
 &uart2 {
@@ -999,12 +1004,6 @@
 	num-lanes = <4>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie_clkreqn_cpm>;
-};
-
-&uart0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart0_xfer &uart0_cts>;
-	status = "disabled";
 };
 
 &saradc {
@@ -1249,10 +1248,6 @@
 	};
 
 	wireless-bluetooth {
-		uart0_gpios: uart0-gpios {
-			rockchip,pins =
-				<2 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
 		bt_reset_gpio: bt-reset-gpio {
 			rockchip,pins =
 				<0 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>;
@@ -1273,3 +1268,21 @@
 		};
 	};
 };
+
+&spdif {
+	status = "disabled";
+};
+
+&i2s0 {
+	status = "disable";
+};
+
+&pwm0 {
+	status = "disable";
+};
+
+&uart4 {
+	status = "disable";
+};
+
+

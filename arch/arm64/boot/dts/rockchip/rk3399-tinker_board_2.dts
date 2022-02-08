@@ -528,7 +528,7 @@
 
 &pinctrl {
 	pinctrl-names = "default";
-	pinctrl-0 = <&gpio_init>;
+	pinctrl-0 = <&gpio_init &test_clkout2>;
 
 	gpio_init_config {
 		gpio_init: gpio_init {
