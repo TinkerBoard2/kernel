@@ -1026,8 +1026,8 @@ static int __maybe_unused rockchip_pcie_suspend_noirq(struct device *dev)
 	struct rockchip_pcie *rockchip = dev_get_drvdata(dev);
 	int ret = 0;
 
-	if (!rockchip->dma_trx_enabled)
-		ret = rockchip_pcie_suspend_for_user(dev);
+	//if (!rockchip->dma_trx_enabled)
+	//	ret = rockchip_pcie_suspend_for_user(dev);
 
 	rockchip_pcie_disable_clocks(rockchip);
 
