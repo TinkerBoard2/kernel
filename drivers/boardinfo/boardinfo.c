@@ -26,6 +26,8 @@ static int ver_show(struct seq_file *m, void *v)
 		boardver = "1.02";	//Mapping to PR and MP.
 	else if (hwid == 3)
 		boardver = "1.03";
+	else if (hwid == 2)
+		boardver = "1.02";	//RTL8211F-VD
 	else
 		boardver = "unknown";
 
