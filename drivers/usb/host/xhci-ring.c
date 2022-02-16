@@ -1695,7 +1695,8 @@ static void handle_port_status(struct xhci_hcd *xhci,
 		goto cleanup;
 	}
 
-	if (hcd->speed < HCD_USB3) {
+	if ((hcd->speed < HCD_USB3) || ((portsc & PORT_PLC) &&
+	    (portsc & PORT_PLS_MASK) == XDEV_INACTIVE))	{
 		xhci_test_and_clear_bit(xhci, port, PORT_PLC);
 		if ((xhci->quirks & XHCI_RESET_PLL_ON_DISCONNECT) &&
 		    (portsc & PORT_CSC) && !(portsc & PORT_CONNECT))
