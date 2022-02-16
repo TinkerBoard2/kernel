@@ -504,7 +504,7 @@ extern u8 mpdatarate[NumRates];
 /* MP set force data rate base on the definition. */
 typedef enum _MPT_RATE_INDEX {
 	/* CCK rate. */
-	MPT_RATE_1M = 1 ,	/* 0 */
+	MPT_RATE_1M = 0 ,	/* 0 */
 	MPT_RATE_2M,
 	MPT_RATE_55M,
 	MPT_RATE_11M,	/* 3 */
