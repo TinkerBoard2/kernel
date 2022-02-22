@@ -1,0 +1,1 @@
+obj-$(CONFIG_RK3399_DEVGPIOMEM)+= rk3399-gpiomem.o

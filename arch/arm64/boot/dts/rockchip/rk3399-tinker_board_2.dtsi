@@ -189,6 +189,12 @@
 		memory-region = <&ramoops_mem>;
 	};
 
+	rk3399_gpiomem: rk3399-gpiomem {
+		compatible = "rockchip,rk3399-gpiomem";
+		reg = <0x0 0xff720000 0x0 0x1000>;
+		status = "okay";
+	};
+
 	fiq_debugger: fiq-debugger {
 		compatible = "rockchip,fiq-debugger";
 		rockchip,serial-id = <2>;
