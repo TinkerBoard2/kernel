@@ -1338,7 +1338,54 @@ static int partner_match(struct device *dev, void *data)
 {
 	return is_typec_partner(dev);
 }
-//1623
+
+/**
+ * typec_set_data_role - Report data role change
+ * @port: The USB Type-C Port where the role was changed
+ * @role: The new data role
+ *
+ * This routine is used by the port drivers to report data role changes.
+ */
+void typec_set_data_role(struct typec_port *port, enum typec_data_role role)
+{
+	struct device *partner_dev;
+
+	if (port->data_role == role)
+		return;
+
+	port->data_role = role;
+	sysfs_notify(&port->dev.kobj, NULL, "data_role");
+	kobject_uevent(&port->dev.kobj, KOBJ_CHANGE);
+
+	partner_dev = device_find_child(&port->dev, NULL, partner_match);
+	if (!partner_dev)
+		return;
+
+	if (to_typec_partner(partner_dev)->identity)
+		typec_product_type_notify(partner_dev);
+
+	put_device(partner_dev);
+}
+EXPORT_SYMBOL_GPL(typec_set_data_role);
+
+/**
+ * typec_set_pwr_role - Report power role change
+ * @port: The USB Type-C Port where the role was changed
+ * @role: The new data role
+ *
+ * This routine is used by the port drivers to report power role changes.
+ */
+void typec_set_pwr_role(struct typec_port *port, enum typec_role role)
+{
+	if (port->pwr_role == role)
+		return;
+
+	port->pwr_role = role;
+	sysfs_notify(&port->dev.kobj, NULL, "power_role");
+	kobject_uevent(&port->dev.kobj, KOBJ_CHANGE);
+}
+EXPORT_SYMBOL_GPL(typec_set_pwr_role);
+//1670
 
 //1727
 /**
@@ -1414,9 +1461,42 @@ int typec_find_port_data_role(const char *name)
 			    ARRAY_SIZE(typec_port_data_roles), name);
 }
 EXPORT_SYMBOL_GPL(typec_find_port_data_role);
-//1799
 
-//1858
+/* ------------------------------------------ */
+/* API for Multiplexer/DeMultiplexer Switches */
+
+/**
+ * typec_set_orientation - Set USB Type-C cable plug orientation
+ * @port: USB Type-C Port
+ * @orientation: USB Type-C cable plug orientation
+ *
+ * Set cable plug orientation for @port.
+ */
+int typec_set_orientation(struct typec_port *port,
+			  enum typec_orientation orientation)
+{
+	port->orientation = orientation;
+	sysfs_notify(&port->dev.kobj, NULL, "orientation");
+	kobject_uevent(&port->dev.kobj, KOBJ_CHANGE);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(typec_set_orientation);
+
+/**
+ * typec_get_orientation - Get USB Type-C cable plug orientation
+ * @port: USB Type-C Port
+ *
+ * Get current cable plug orientation for @port.
+ */
+enum typec_orientation typec_get_orientation(struct typec_port *port)
+{
+	return port->orientation;
+}
+EXPORT_SYMBOL_GPL(typec_get_orientation);
+//1840
+
+//1856
 /* --------------------------------------- */
 
 /**

@@ -966,6 +966,8 @@ static int tcpm_mux_set(struct tcpm_port *port, int state,
 	port->extcon_usb_role = usb_role;
 	port->extcon_orientation = orientation;
 
+	typec_set_orientation(port->typec_port, orientation);
+
 	tcpm_log_force(port, "Requesting mux state %d, usb-role %d, orientation %d",
 		 state, usb_role, orientation);
 
@@ -1128,8 +1130,8 @@ static int tcpm_set_roles(struct tcpm_port *port, bool attached,
 
 	port->pwr_role = role;
 	port->data_role = data;
-	//typec_set_data_role(port->typec_port, data);
-	//typec_set_pwr_role(port->typec_port, role);
+	typec_set_data_role(port->typec_port, data);
+	typec_set_pwr_role(port->typec_port, role);
 
 	return 0;
 }
@@ -1144,7 +1146,7 @@ static int tcpm_set_pwr_role(struct tcpm_port *port, enum typec_role role)
 		return ret;
 
 	port->pwr_role = role;
-	//typec_set_pwr_role(port->typec_port, role);
+	typec_set_pwr_role(port->typec_port, role);
 
 	return 0;
 }
