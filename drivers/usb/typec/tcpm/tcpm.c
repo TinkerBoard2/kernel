@@ -4577,7 +4577,8 @@ static void run_state_machine(struct tcpm_port *port)
 	/* PR_Swap states */
 	case PR_SWAP_ACCEPT:
 		/* send discover again after power role swap*/
-		port->send_discover = true;
+		if (port->partner_altmode[0] == NULL)
+			port->send_discover = true;
 		tcpm_pd_send_control(port, PD_CTRL_ACCEPT);
 		tcpm_set_state(port, PR_SWAP_START, 0);
 		break;
