@@ -1840,6 +1840,7 @@ static int rk_gmac_phy_power_on(struct rk_priv_data *bsp_priv, bool enable)
 	return 0;
 }
 
+extern int get_board_id(void);
 static struct rk_priv_data *rk_gmac_setup(struct platform_device *pdev,
 					  struct plat_stmmacenet_data *plat,
 					  const struct rk_gmac_ops *ops)
@@ -1849,6 +1850,12 @@ static struct rk_priv_data *rk_gmac_setup(struct platform_device *pdev,
 	int ret;
 	const char *strings = NULL;
 	int value;
+	int tx_delay_rtl8211e = 0x27, rx_delay_rtl8211e = 0x1f;
+	int tx_delay_rtl8211f = 0x25, rx_delay_rtl8211f = 0x20;
+	bool is_rtl8211e = get_board_id() >= 3 ? true: false;
+	bool is_rtl8211f = get_board_id() < 3 ? true: false;
+
+	printk("%s: #### boardid = %d\n", __func__, get_board_id());
 
 	bsp_priv = devm_kzalloc(dev, sizeof(*bsp_priv), GFP_KERNEL);
 	if (!bsp_priv)
@@ -1902,6 +1909,16 @@ static struct rk_priv_data *rk_gmac_setup(struct platform_device *pdev,
 		dev_info(dev, "RX delay(0x%x).\n", value);
 		bsp_priv->rx_delay = value;
 	}
+
+	if (is_rtl8211e) {
+		bsp_priv->tx_delay = tx_delay_rtl8211e;
+		bsp_priv->rx_delay = rx_delay_rtl8211e;
+	} else if (is_rtl8211f) {
+		bsp_priv->tx_delay = tx_delay_rtl8211f;
+		bsp_priv->rx_delay = rx_delay_rtl8211f;
+	}
+
+	dev_info(dev, "Tune TX delay(0x%x) RX delay(0x%x).\n", bsp_priv->tx_delay, bsp_priv->rx_delay);
 
 	bsp_priv->grf = syscon_regmap_lookup_by_phandle(dev->of_node,
 							"rockchip,grf");

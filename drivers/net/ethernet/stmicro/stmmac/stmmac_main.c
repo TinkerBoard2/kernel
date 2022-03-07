@@ -820,6 +820,92 @@ static void stmmac_mac_flow_ctrl(struct stmmac_priv *priv, u32 duplex)
 			priv->pause, tx_cnt);
 }
 
+void set_led_configuration_e(struct phy_device *phydev)
+{
+	// disable EEE LED mode
+	phy_write(phydev, 31, 0x0005);
+	phy_write(phydev, 5, 0x8b82);
+	phy_write(phydev, 6, 0x052b);
+	phy_write(phydev, 31, 0x0000);
+
+	// To switch to extension Page44
+	phy_write(phydev, 31, 0x0007);
+	phy_write(phydev, 30, 0x002c);
+
+	printk("%s: #### before setting led, Reg26 = 0x%x , Reg28 = 0x%x\n", __func__, phy_read(phydev, 26), phy_read(phydev, 28));
+
+	//LED Link speed default setting
+	phy_write(phydev, 28, (phy_read(phydev, 28) & 0xf000));
+	//LED1 & LED2 not blinking
+	phy_write(phydev, 26, (phy_read(phydev, 26) & ~(BIT(5)|BIT(6))) );
+
+	switch (phydev->speed) {
+		case 1000:
+		//LED green
+		phy_write(phydev, 28, (phy_read(phydev, 28) | BIT(6)) );
+		break;
+		case 100:
+		//LED orange
+		phy_write(phydev, 28, (phy_read(phydev, 28) | BIT(9)) );
+		break;
+		default:
+		break;
+	}
+
+	printk("%s: #### after setting led, Reg26 = 0x%x , Reg28 = 0x%x\n", __func__, phy_read(phydev, 26), phy_read(phydev, 28));
+
+	//switch to PHY`s Page0
+	phy_write(phydev, 31, 0);
+}
+
+void set_led_configuration_f(struct phy_device *phydev)
+{
+	// To switch Page0xd04
+	phy_write(phydev, 31, 0x0d04);
+
+	//Disable EEELCR mode
+	phy_write(phydev, 17, 0);
+	printk("%s: #### before setting led, Reg16 = 0x%x\n", __func__, phy_read(phydev, 16));
+
+	//LED Link speed default setting
+	phy_write(phydev, 16, 0x8910);
+	printk("%s: #### after setting led, Reg16 = 0x%x\n", __func__, phy_read(phydev, 16));
+
+	//switch to PHY`s Page0
+	phy_write(phydev, 31, 0);
+}
+
+void adjust_rgmii_driving(struct phy_device *phydev)
+{
+	// set to extension page
+	phy_write(phydev, 31, 0x0007);
+
+	// switch extension page 164
+	phy_write(phydev, 30, 0x00a4);
+
+	// set to enhance RGMII signal driving
+	printk("%s: #### before setting phy driving, Reg28 = 0x%x\n", __func__, phy_read(phydev, 28));
+	phy_write(phydev, 28, 0x0857f);
+	printk("%s: #### after setting phy driving, Reg28 = 0x%x\n", __func__, phy_read(phydev, 28));
+
+	//switch to PHY`s Page0
+	phy_write(phydev, 31, 0);
+}
+
+extern int get_board_id(void);
+void setConfiguration(struct phy_device *phydev) {
+	bool is_rtl8211e = get_board_id() >= 3 ? true: false;
+	printk("%s: #### hwid = %d, PYH is %s \n", __func__, get_board_id(), is_rtl8211e ? "RTL8211E" : "RTL8211F");
+	if (is_rtl8211e) {
+		// RTL8211E
+		set_led_configuration_e(phydev);
+		adjust_rgmii_driving(phydev);
+	} else {
+		// RTL8211F
+		set_led_configuration_f(phydev);
+	}
+}
+
 /**
  * stmmac_adjust_link - adjusts the link parameters
  * @dev: net device structure
@@ -860,6 +946,7 @@ static void stmmac_adjust_link(struct net_device *dev)
 		if (phydev->speed != priv->speed) {
 			new_state = true;
 			ctrl &= ~priv->hw->link.speed_mask;
+			setConfiguration(phydev);
 			switch (phydev->speed) {
 			case SPEED_1000:
 				ctrl |= priv->hw->link.speed1000;
