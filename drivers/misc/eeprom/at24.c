@@ -98,6 +98,8 @@ static unsigned int at24_io_limit = 128;
 module_param_named(io_limit, at24_io_limit, uint, 0);
 MODULE_PARM_DESC(at24_io_limit, "Maximum bytes per I/O (default 128)");
 
+static struct kobject *eeprom_kobj;
+
 /*
  * Specs often allow 5 msec for a page write, sometimes 20 msec;
  * it's important to recover from write timeouts.
@@ -421,6 +423,14 @@ static int at24_read(void *priv, unsigned int off, void *val, size_t count)
 	return 0;
 }
 
+void at24_read_eeprom(char *buf, loff_t off, size_t count)
+{
+	struct at24_data *at24;
+
+	at24 = dev_get_drvdata(container_of(eeprom_kobj, struct device, kobj));
+	at24_read(at24, off, buf, count);
+}
+
 static int at24_write(void *priv, unsigned int off, void *val, size_t count)
 {
 	struct at24_data *at24;
@@ -704,6 +714,7 @@ static int at24_probe(struct i2c_client *client)
 		}
 	}
 
+	eeprom_kobj = &client->dev.kobj;
 	i2c_set_clientdata(client, at24);
 
 	/* enable runtime pm */

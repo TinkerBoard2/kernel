@@ -3,7 +3,7 @@ obj-$(CONFIG_STMMAC_ETH) += stmmac.o
 
 stmmac-objs:= stmmac_main.o stmmac_mdio.o dwmac_lib.o	\
 	      mmc_core.o dwmac4_descs.o dwmac4_dma.o	\
-	      dwmac4_lib.o dwmac4_core.o hwif.o	\
+	      dwmac4_lib.o dwmac4_core.o hwif.o	eth_mac_tinker.o \
 	      $(stmmac-y)
 
 stmmac-$(CONFIG_STMMAC_FULL) += ring_mode.o chain_mode.o dwmac1000_core.o	\
