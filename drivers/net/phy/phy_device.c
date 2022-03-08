@@ -1793,6 +1793,23 @@ EXPORT_SYMBOL(genphy_write_mmd_unsupported);
 
 int genphy_suspend(struct phy_device *phydev)
 {
+	int value;
+	int retry =3;
+
+	mutex_lock(&phydev->lock);
+	phy_set_bits(phydev, MII_BMCR, BMCR_PDOWN);
+	while (retry) {
+		value = phy_read(phydev, MII_BMCR);
+		printk("%s: #### MII_BMCR: 0x%04X , retry = %d\n", __func__, value, retry);
+		if (value & BMCR_PDOWN)
+			break;
+
+		//phy_write(phydev, MII_BMCR, value | BMCR_PDOWN);
+		phy_set_bits(phydev, MII_BMCR, BMCR_PDOWN);
+		retry--;
+	}
+	mutex_unlock(&phydev->lock);
+
 	return phy_set_bits(phydev, MII_BMCR, BMCR_PDOWN);
 }
 EXPORT_SYMBOL(genphy_suspend);
