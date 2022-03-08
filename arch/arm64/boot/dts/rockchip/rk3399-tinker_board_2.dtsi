@@ -436,6 +436,8 @@
 	snps,reset-delays-us = <0 16000 72000>;
 	tx_delay = <0x25>;
 	rx_delay = <0x20>;
+	wakeup-enable = "0";
+	wolirq-gpio = <&gpio3 16 GPIO_ACTIVE_LOW>;
 	status = "okay";
 };
 

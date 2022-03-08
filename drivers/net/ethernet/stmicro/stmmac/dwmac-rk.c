@@ -2218,10 +2218,14 @@ static int rk_gmac_suspend(struct device *dev)
 	int ret = stmmac_suspend(dev);
 
 	/* Keep the PHY up if we use Wake-on-Lan. */
+/*
 	if (!device_may_wakeup(dev)) {
 		rk_gmac_powerdown(bsp_priv);
 		bsp_priv->suspended = true;
 	}
+*/
+	rk_gmac_powerdown(bsp_priv);
+	bsp_priv->suspended = true;
 
 	return ret;
 }
