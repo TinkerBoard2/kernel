@@ -512,14 +512,27 @@ void smc_smcd_terminate(struct smcd_dev *dev, u64 peer_gid)
 	}
 }
 
-/* Determine vlan of internal TCP socket.
- * @vlan_id: address to store the determined vlan id into
- */
+static int smc_vlan_by_tcpsk_walk(struct net_device *lower_dev,
+				  struct netdev_nested_priv *priv)
+{
+	unsigned short *vlan_id = (unsigned short *)priv->data;
+
+	if (is_vlan_dev(lower_dev)) {
+		*vlan_id = vlan_dev_vlan_id(lower_dev);
+		return 1;
+	}
+
+	return 0;
+}
+
+/* Determine vlan of internal TCP socket. */
+
 int smc_vlan_by_tcpsk(struct socket *clcsock, unsigned short *vlan_id)
 {
 	struct dst_entry *dst = sk_dst_get(clcsock->sk);
+	struct netdev_nested_priv priv;
 	struct net_device *ndev;
-	int i, nest_lvl, rc = 0;
+	int rc = 0;
 
 	*vlan_id = 0;
 	if (!dst) {
@@ -537,20 +550,9 @@ int smc_vlan_by_tcpsk(struct socket *clcsock, unsigned short *vlan_id)
 		goto out_rel;
 	}
 
+	priv.data = (void *)&ini->vlan_id;
 	rtnl_lock();
-	nest_lvl = dev_get_nest_level(ndev);
-	for (i = 0; i < nest_lvl; i++) {
-		struct list_head *lower = &ndev->adj_list.lower;
-
-		if (list_empty(lower))
-			break;
-		lower = lower->next;
-		ndev = (struct net_device *)netdev_lower_get_next(ndev, &lower);
-		if (is_vlan_dev(ndev)) {
-			*vlan_id = vlan_dev_vlan_id(ndev);
-			break;
-		}
-	}
+	netdev_walk_all_lower_dev(ndev, smc_vlan_by_tcpsk_walk, &priv);
 	rtnl_unlock();
 
 out_rel:
