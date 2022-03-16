@@ -98,6 +98,7 @@
 
 #define CC_STATE_ROLE(chip)	(((chip)->cc_state) & CC_STATE_TOGSS_ROLE)
 
+extern int get_board_id(void);
 static u8 fusb30x_port_used;
 static struct fusb30x_chip *fusb30x_port_info[256];
 
@@ -3435,6 +3436,9 @@ static int fusb30x_probe(struct i2c_client *client,
 	struct PD_CAP_INFO *pd_cap_info;
 	int ret;
 	char *string[2];
+
+	if (get_board_id() >= 3)
+		return -ENODEV;
 
 	chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)

@@ -16,6 +16,8 @@
 #include "core.h"
 #include "gadget.h"
 
+extern int get_board_id(void);
+
 static void dwc3_otg_disable_events(struct dwc3 *dwc, u32 disable_mask)
 {
 	u32 reg = dwc3_readl(dwc->regs, DWC3_OEVTEN);
@@ -448,8 +450,12 @@ static struct extcon_dev *dwc3_get_extcon(struct dwc3 *dwc)
 	struct extcon_dev *edev;
 	const char *name;
 
-	if (device_property_read_bool(dev, "extcon"))
-		return extcon_get_edev_by_phandle(dev, 0);
+	if (device_property_read_bool(dev, "extcon")){
+		if (get_board_id() >= 3)
+			return extcon_get_edev_by_phandle(dev, 1);
+		else
+			return extcon_get_edev_by_phandle(dev, 0);
+	}
 
 	/*
 	 * Device tree platforms should get extcon via phandle.

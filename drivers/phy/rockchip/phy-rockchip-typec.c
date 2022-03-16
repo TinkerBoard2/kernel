@@ -386,6 +386,8 @@
 
 #define POWER_ON_TRIES			5
 
+extern int get_board_id(void);
+
 struct usb3phy_reg {
 	u32 offset;
 	u32 enable_bit;
@@ -1698,7 +1700,10 @@ static int rockchip_typec_phy_probe(struct platform_device *pdev)
 
 	typec_phy_pre_init(tcphy);
 
-	tcphy->extcon = extcon_get_edev_by_phandle(dev, 0);
+	if (get_board_id() >= 3)
+		tcphy->extcon = extcon_get_edev_by_phandle(dev, 1);
+	else
+		tcphy->extcon = extcon_get_edev_by_phandle(dev, 0);
 	if (IS_ERR(tcphy->extcon)) {
 		if (PTR_ERR(tcphy->extcon) == -ENODEV) {
 			tcphy->extcon = NULL;
