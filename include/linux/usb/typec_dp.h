@@ -5,6 +5,11 @@
 #include <linux/usb/typec_altmode.h>
 
 #define USB_TYPEC_DP_SID	0xff01
+/* USB IF has not assigned a Standard ID (SID) for VirtualLink,
+ * so the manufacturers of VirtualLink adapters use their Vendor
+ * IDs as the SVID.
+ */
+#define USB_TYPEC_NVIDIA_VLINK_SID	0x955	/* NVIDIA VirtualLink */
 #define USB_TYPEC_DP_MODE	1
 
 /*
@@ -53,6 +58,26 @@ enum {
 	DP_PIN_ASSIGN_F, /* Not supported after v1.0b */
 };
 
+/* Pin assignments that use USB3.1 Gen2 signaling to carry DP protocol */
+#define DP_PIN_ASSIGN_GEN2_BR_MASK	(BIT(DP_PIN_ASSIGN_A) | \
+					 BIT(DP_PIN_ASSIGN_B))
+
+/* Pin assignments that use DP v1.3 signaling to carry DP protocol */
+#define DP_PIN_ASSIGN_DP_BR_MASK	(BIT(DP_PIN_ASSIGN_C) | \
+					 BIT(DP_PIN_ASSIGN_D) | \
+					 BIT(DP_PIN_ASSIGN_E) | \
+					 BIT(DP_PIN_ASSIGN_F))
+
+/* DP only pin assignments */
+#define DP_PIN_ASSIGN_DP_ONLY_MASK	(BIT(DP_PIN_ASSIGN_A) | \
+					 BIT(DP_PIN_ASSIGN_C) | \
+					 BIT(DP_PIN_ASSIGN_E))
+
+/* Pin assignments where one channel is for USB */
+#define DP_PIN_ASSIGN_MULTI_FUNC_MASK	(BIT(DP_PIN_ASSIGN_B) | \
+					 BIT(DP_PIN_ASSIGN_D) | \
+					 BIT(DP_PIN_ASSIGN_F))
+
 /* DisplayPort alt mode specific commands */
 #define DP_CMD_STATUS_UPDATE		VDO_CMD_VENDOR(0)
 #define DP_CMD_CONFIGURE		VDO_CMD_VENDOR(1)
@@ -66,8 +91,12 @@ enum {
 #define DP_CAP_GEN2			BIT(3) /* Reserved after v1.0b */
 #define DP_CAP_RECEPTACLE		BIT(6)
 #define DP_CAP_USB			BIT(7)
-#define DP_CAP_DFP_D_PIN_ASSIGN(_cap_)	(((_cap_) & GENMASK(15, 8)) >> 8)
-#define DP_CAP_UFP_D_PIN_ASSIGN(_cap_)	(((_cap_) & GENMASK(23, 16)) >> 16)
+#define DP_CAP_DFP_D_PIN_ASSIGN(_cap_)	((((_cap_) >> 6) & 0x1) ? \
+					(((_cap_) & GENMASK(23, 16)) >> 16) \
+					: (((_cap_) & GENMASK(15, 8)) >> 8))
+#define DP_CAP_UFP_D_PIN_ASSIGN(_cap_)	((((_cap_) >> 6) & 0x1) ? \
+					(((_cap_) & GENMASK(15, 8)) >> 8) \
+					: (((_cap_) & GENMASK(23, 16)) >> 16))
 
 /* DisplayPort Status Update VDO bits */
 #define DP_STATUS_CONNECTION(_status_)	((_status_) & 3)
@@ -91,5 +120,9 @@ enum {
 #define DP_CONF_SIGNALING_GEN_2		BIT(3) /* Reserved after v1.0b */
 #define DP_CONF_PIN_ASSIGNEMENT_SHIFT	8
 #define DP_CONF_PIN_ASSIGNEMENT_MASK	GENMASK(15, 8)
+
+/* Helper for setting/getting the pin assignment value to the configuration */
+#define DP_CONF_SET_PIN_ASSIGN(_a_)	((_a_) << 8)
+#define DP_CONF_GET_PIN_ASSIGN(_conf_)	(((_conf_) & GENMASK(15, 8)) >> 8)
 
 #endif /* __USB_TYPEC_DP_H */

@@ -12,6 +12,7 @@
 #include <linux/gpio/consumer.h>
 #include <linux/usb/tcpm.h>
 #include <linux/regmap.h>
+#include <linux/delay.h>
 #include "tcpci.h"
 
 #define RT1711H_VID		0x29CF
@@ -39,6 +40,21 @@ struct rt1711h_chip {
 	struct tcpci_data data;
 	struct tcpci *tcpci;
 	struct device *dev;
+	struct gpio_desc *gpio_vbus_5v;
+	struct extcon_dev *extcon;
+};
+
+static const unsigned int rt1711h_cable[] = {
+	EXTCON_USB,
+	EXTCON_USB_HOST,
+	EXTCON_USB_VBUS_EN,
+	EXTCON_CHG_USB_SDP,
+	EXTCON_CHG_USB_CDP,
+	EXTCON_CHG_USB_DCP,
+	EXTCON_CHG_USB_SLOW,
+	EXTCON_CHG_USB_FAST,
+	EXTCON_DISP_DP,
+	EXTCON_NONE,
 };
 
 static int rt1711h_read16(struct rt1711h_chip *chip, unsigned int reg, u16 *val)
@@ -73,6 +89,42 @@ static struct rt1711h_chip *tdata_to_rt1711h(struct tcpci_data *tdata)
 	return container_of(tdata, struct rt1711h_chip, data);
 }
 
+static int rt1711h_register_extcon(struct rt1711h_chip *chip)
+{
+        int ret;
+
+	chip->extcon = devm_extcon_dev_allocate(chip->dev, rt1711h_cable);
+	if (IS_ERR(chip->extcon)) {
+		dev_err(chip->dev, "allocat extcon failed\n");
+		return PTR_ERR(chip->extcon);
+	}
+
+	ret = devm_extcon_dev_register(chip->dev, chip->extcon);
+	if (ret) {
+		dev_err(chip->dev, "failed to register extcon: %d\n",
+			ret);
+		return ret;
+	}
+
+	ret = extcon_set_property_capability(chip->extcon, EXTCON_USB,
+					     EXTCON_PROP_USB_TYPEC_POLARITY);
+	ret |= extcon_set_property_capability(chip->extcon, EXTCON_USB_HOST,
+					     EXTCON_PROP_USB_TYPEC_POLARITY);
+	ret |= extcon_set_property_capability(chip->extcon, EXTCON_DISP_DP,
+					     EXTCON_PROP_USB_TYPEC_POLARITY);
+	ret |= extcon_set_property_capability(chip->extcon, EXTCON_USB,
+					     EXTCON_PROP_USB_SS);
+	ret |= extcon_set_property_capability(chip->extcon, EXTCON_USB_HOST,
+					     EXTCON_PROP_USB_SS);
+	ret |= extcon_set_property_capability(chip->extcon, EXTCON_DISP_DP,
+					     EXTCON_PROP_USB_SS);
+	if (ret) {
+		dev_err(chip->dev, "failed to set EXTCON property capability: %d\n", ret);
+		return ret;
+	}
+	return 0;
+}
+
 static int rt1711h_init(struct tcpci *tcpci, struct tcpci_data *tdata)
 {
 	int ret;
@@ -102,6 +154,20 @@ static int rt1711h_init(struct tcpci *tcpci, struct tcpci_data *tdata)
 
 	/* dcSRC.DRP : 33% */
 	return rt1711h_write16(chip, RT1711H_RTCTRL16, 330);
+}
+
+static int rt1711h_set_vbus(struct tcpci *tcpci, struct tcpci_data *tdata,
+			    bool source, bool sink)
+{
+	struct rt1711h_chip *chip = tdata_to_rt1711h(tdata);
+
+        if (chip->gpio_vbus_5v) {
+                gpiod_set_value(chip->gpio_vbus_5v, source);
+		dev_dbg(chip->dev, "rt1711h set vbus to %s\n", source ? "enable" : "disable");
+	} else
+		return -ENODEV;
+
+	return 0;
 }
 
 static int rt1711h_set_vconn(struct tcpci *tcpci, struct tcpci_data *tdata,
@@ -236,6 +302,22 @@ static int rt1711h_probe(struct i2c_client *client,
 	chip->dev = &client->dev;
 	i2c_set_clientdata(client, chip);
 
+	/* Get Vbus 5V gpio */
+	chip->gpio_vbus_5v = devm_gpiod_get_optional(chip->dev, "vbus-5v",
+                                                     GPIOD_OUT_LOW);
+        if (IS_ERR(chip->gpio_vbus_5v))
+                dev_warn(chip->dev,
+                         "Could not get named GPIO for VBus5V!\n");
+        else
+                gpiod_set_value(chip->gpio_vbus_5v, 0);
+
+	ret =rt1711h_register_extcon(chip);
+	if (ret) {
+		dev_warn(chip->dev,"Failed to register extcon: %d\n",ret);
+		return ret;
+	}
+
+
 	ret = rt1711h_sw_reset(chip);
 	if (ret < 0)
 		return ret;
@@ -246,8 +328,10 @@ static int rt1711h_probe(struct i2c_client *client,
 		return ret;
 
 	chip->data.init = rt1711h_init;
+	chip->data.set_vbus = rt1711h_set_vbus;
 	chip->data.set_vconn = rt1711h_set_vconn;
 	chip->data.start_drp_toggling = rt1711h_start_drp_toggling;
+	chip->data.extcon = chip->extcon;
 	chip->tcpci = tcpci_register_port(chip->dev, &chip->data);
 	if (IS_ERR_OR_NULL(chip->tcpci))
 		return PTR_ERR(chip->tcpci);
@@ -258,7 +342,7 @@ static int rt1711h_probe(struct i2c_client *client,
 					dev_name(chip->dev), chip);
 	if (ret < 0)
 		return ret;
-	enable_irq_wake(client->irq);
+	//enable_irq_wake(client->irq);
 
 	return 0;
 }
@@ -299,3 +383,5 @@ module_i2c_driver(rt1711h_i2c_driver);
 MODULE_AUTHOR("ShuFan Lee <shufan_lee@richtek.com>");
 MODULE_DESCRIPTION("RT1711H USB Type-C Port Controller Interface Driver");
 MODULE_LICENSE("GPL");
+
+

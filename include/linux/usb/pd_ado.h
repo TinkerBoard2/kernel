@@ -40,3 +40,4 @@ static inline unsigned int usb_pd_ado_hot_swap_batt(u32 ado)
 	       USB_PD_ADO_HOT_SWAP_BATT_MASK;
 }
 #endif /* __LINUX_USB_PD_ADO_H */
+
