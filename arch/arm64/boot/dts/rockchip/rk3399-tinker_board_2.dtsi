@@ -317,6 +317,10 @@
 		rockchip,codec = <&cdn_dp 1>;
 	};
 
+	sound-ext-card {
+		status = "disabled";
+	};
+
 	/* switched by pmic_sleep */
 	vcc1v8_s3: vcca1v8_s3: vcc1v8-s3 {
 		compatible = "regulator-fixed";
