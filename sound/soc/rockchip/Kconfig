@@ -64,6 +64,12 @@ config SND_SOC_ROCKCHIP_VAD
 	  Say Y or M if you want to add support for VAD driver for
 	  Rockchip VAD device.
 
+config SND_SOC_HIFIBERRY_DACPLUS
+	tristate "Support for HifiBerry DAC+"
+	select SND_SOC_PCM512x_I2C
+	help
+	  Say Y or M if you want to add support for HifiBerry DAC+.
+
 config SND_SOC_ROCKCHIP_MAX98090
 	tristate "ASoC support for Rockchip boards using a MAX98090 codec"
 	depends on SND_SOC_ROCKCHIP && I2C && GPIOLIB && CLKDEV_LOOKUP

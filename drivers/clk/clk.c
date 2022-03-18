@@ -961,12 +961,6 @@ static void clk_core_unprepare(struct clk_core *core)
 
 	trace_clk_unprepare_complete(core);
 
-	if (core->vdd_class) {
-		clk_unvote_vdd_level(core->vdd_class, core->vdd_class_vote);
-		core->vdd_class_vote = 0;
-		core->new_vdd_class_vote = 0;
-	}
-
 	clk_core_unprepare(core->parent);
 }
 
@@ -1017,28 +1011,13 @@ static int clk_core_prepare(struct clk_core *core)
 
 		trace_clk_prepare(core);
 
-		ret = clk_vote_rate_vdd(core, core->rate);
-		if (ret) {
-			clk_core_unprepare(core->parent);
-			return ret;
-		}
-		if (core->vdd_class) {
-			core->vdd_class_vote
-				= clk_find_vdd_level(core, core->rate);
-			core->new_vdd_class_vote = core->vdd_class_vote;
-		}
-
 		if (core->ops->prepare)
 			ret = core->ops->prepare(core->hw);
 
 		trace_clk_prepare_complete(core);
 
-		if (ret) {
-			clk_unvote_rate_vdd(core, core->rate);
-			core->vdd_class_vote = 0;
-			core->new_vdd_class_vote = 0;
+		if (ret)
 			goto unprepare;
-		}
 	}
 
 	core->prepare_count++;

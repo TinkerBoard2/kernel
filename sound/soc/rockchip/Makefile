@@ -14,6 +14,8 @@ snd-soc-rockchip-vad-$(CONFIG_ARM64) += vad_preprocess_arm64.o
 snd-soc-rockchip-vad-$(CONFIG_ARM) += vad_preprocess_arm.o
 endif
 
+ccflags-y += -DROCKCHIP_AUDIO
+
 obj-$(CONFIG_SND_SOC_ROCKCHIP) += snd-soc-rockchip-pcm.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_AUDIO_PWM) += snd-soc-rockchip-audio-pwm.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_I2S) += snd-soc-rockchip-i2s.o
@@ -30,6 +32,7 @@ snd-soc-rockchip-rt5651-objs := rockchip_rt5651.o
 snd-soc-rockchip-rt5651-rk628-objs := rockchip_rt5651_rk628.o
 snd-soc-rk3288-hdmi-analog-objs := rk3288_hdmi_analog.o
 snd-soc-rk3399-gru-sound-objs := rk3399_gru_sound.o
+snd-soc-hifiberry-dacplus-objs := hifiberry_dacplus.o
 
 obj-$(CONFIG_SND_SOC_ROCKCHIP_HDMI) += snd-soc-rockchip-hdmi.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_MAX98090) += snd-soc-rockchip-max98090.o
@@ -39,3 +42,4 @@ obj-$(CONFIG_SND_SOC_ROCKCHIP_RT5651) += snd-soc-rockchip-rt5651.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_RT5651_RK628) += snd-soc-rockchip-rt5651-rk628.o
 obj-$(CONFIG_SND_SOC_RK3288_HDMI_ANALOG) += snd-soc-rk3288-hdmi-analog.o
 obj-$(CONFIG_SND_SOC_RK3399_GRU_SOUND) += snd-soc-rk3399-gru-sound.o
+obj-$(CONFIG_SND_SOC_HIFIBERRY_DACPLUS) += snd-soc-hifiberry-dacplus.o
