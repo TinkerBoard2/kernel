@@ -159,7 +159,7 @@
 	};
 
 	spdif-sound {
-		status = "okay";
+		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,name = "ROCKCHIP,SPDIF";
 		simple-audio-card,cpu {
@@ -970,11 +970,19 @@
 };
 
 &spdif {
-	status = "disabled";
+	status = "okay";
 	pinctrl-0 = <&spdif_bus>;
 	i2c-scl-rising-time-ns = <450>;
 	i2c-scl-falling-time-ns = <15>;
 	#sound-dai-cells = <0>;
+};
+
+&dp_sound {
+	status = "okay";
+};
+
+&spdif_out {
+	status = "disabled";
 };
 
 &i2s0 {
@@ -1343,10 +1351,6 @@
 			rockchip,pins = <1 RK_PA2 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
-};
-
-&spdif {
-	status = "disabled";
 };
 
 &i2s0 {
