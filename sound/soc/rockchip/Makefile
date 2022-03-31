@@ -36,6 +36,8 @@ snd-soc-rk3399-gru-sound-objs := rk3399_gru_sound.o
 snd-soc-hifiberry-dac-objs := hifiberry_dac.o
 snd-soc-hifiberry-dacplus-objs := hifiberry_dacplus.o
 snd-soc-hifiberry-digi-objs := hifiberry_digi.o
+snd-soc-iqaudio-dac-objs := iqaudio-dac.o
+snd-soc-iqaudio-digi-objs := iqaudio-digi.o
 
 obj-$(CONFIG_SND_SOC_ROCKCHIP_CDNDP) += snd-soc-rockchip-cdndp.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_HDMI) += snd-soc-rockchip-hdmi.o
@@ -49,3 +51,5 @@ obj-$(CONFIG_SND_SOC_RK3399_GRU_SOUND) += snd-soc-rk3399-gru-sound.o
 obj-$(CONFIG_SND_SOC_HIFIBERRY_DAC) += snd-soc-hifiberry-dac.o
 obj-$(CONFIG_SND_SOC_HIFIBERRY_DACPLUS) += snd-soc-hifiberry-dacplus.o
 obj-$(CONFIG_SND_SOC_HIFIBERRY_DIGI) += snd-soc-hifiberry-digi.o
+obj-$(CONFIG_SND_SOC_IQAUDIO_DAC) += snd-soc-iqaudio-dac.o
+obj-$(CONFIG_SND_SOC_IQAUDIO_DIGI) += snd-soc-iqaudio-digi.o
