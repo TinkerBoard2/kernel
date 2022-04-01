@@ -171,6 +171,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_STI_SAS
 	select SND_SOC_TAS2552 if I2C
 	select SND_SOC_TAS5086 if I2C
+	select SND_SOC_TAS5713 if I2C
 	select SND_SOC_TAS571X if I2C
 	select SND_SOC_TAS5720 if I2C
 	select SND_SOC_TAS6424 if I2C
@@ -1045,6 +1046,9 @@ config SND_SOC_TAS2552
 config SND_SOC_TAS5086
 	tristate "Texas Instruments TAS5086 speaker amplifier"
 	depends on I2C
+
+config SND_SOC_TAS5713
+	tristate
 
 config SND_SOC_TAS571X
 	tristate "Texas Instruments TAS571x power amplifiers"

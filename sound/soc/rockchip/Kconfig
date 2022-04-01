@@ -102,6 +102,24 @@ config SND_SOC_IQAUDIO_DIGI
 	help
 	  Say Y or M if you want to add support for IQAudIO Digital IO board.
 
+config SND_SOC_JUSTBOOM_DAC
+	tristate "Support for JustBoom DAC"
+	select SND_SOC_PCM512x_I2C
+	help
+	  Say Y or M if you want to add support for JustBoom DAC.
+
+config SND_SOC_JUSTBOOM_DIGI
+	tristate "Support for JustBoom Digi"
+	select SND_SOC_WM8804_I2C
+	help
+	  Say Y or M if you want to add support for JustBoom Digi.
+
+config SND_SOC_JUSTBOOM_AMP
+	tristate "Support for the JustBoom Amp HAT"
+	select SND_SOC_TAS5713
+	help
+	  Say Y or M if you want to add support for the HifiBerry Amp amplifier board.
+
 config SND_SOC_ROCKCHIP_MAX98090
 	tristate "ASoC support for Rockchip boards using a MAX98090 codec"
 	depends on SND_SOC_ROCKCHIP && I2C && GPIOLIB && CLKDEV_LOOKUP
