@@ -22,6 +22,8 @@ EXTRA_CFLAGS += -Wno-missing-field-initializers
 EXTRA_CFLAGS += -Wno-type-limits
 EXTRA_CFLAGS += -Wno-vla
 
+EXTRA_CFLAGS += -Wno-cast-function-type
+
 EXTRA_CFLAGS += -I$(src)/include
 EXTRA_CFLAGS += -I$(src)/hal/phydm
 
