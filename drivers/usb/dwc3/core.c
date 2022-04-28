@@ -1710,7 +1710,8 @@ static int dwc3_probe(struct platform_device *pdev)
 		goto err5;
 
 	if (!strcmp(dev_name(dev), "fe900000.dwc3")) {
-		int i = (get_project_id() == 4)? 1 : 0;
+		int project_id = get_project_id();
+		int i = (project_id == 3 || project_id == 4)? 1 : 0;
 
 		dwc->gpio_hub_vbus = devm_gpiod_get_index_optional(dev, "hub-vbus", i, GPIOD_OUT_HIGH);
 		if (IS_ERR(dwc->gpio_hub_vbus))
