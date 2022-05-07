@@ -345,7 +345,7 @@ static int rfkill_rk_set_power(void *data, bool blocked)
 		if (gpio_is_valid(poweron->io)) {
 			if (gpio_get_value(poweron->io) == poweron->enable) {
 				gpio_direction_output(poweron->io,
-						      !poweron->enable);
+						      poweron->enable);
 				msleep(20);
 			}
 		}
@@ -355,7 +355,7 @@ static int rfkill_rk_set_power(void *data, bool blocked)
 		if (gpio_is_valid(reset->io)) {
 			if (gpio_get_value(reset->io) == reset->enable) {
 				gpio_direction_output(reset->io,
-						      !reset->enable);
+						      reset->enable);
 				msleep(20);
 			}
 		}
