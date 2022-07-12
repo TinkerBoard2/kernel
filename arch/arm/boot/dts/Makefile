@@ -844,6 +844,7 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rv1108-evb.dtb \
 	rv1109-38x38-v10-emmc.dtb \
 	rv1109-38x38-v10-emmc-imx307.dtb \
+	rv1109-38-rk630.dtb \
 	rv1109-38-v10-spi-nand.dtb \
 	rv1109-ai-cam-ddr3-v1.dtb \
 	rv1109-evb-ddr3-v12-facial-gate.dtb \
@@ -877,6 +878,7 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rv1126-rmsl-ddr3-v1.dtb \
 	rv1126-snapshot.dtb \
 	rv1126-sphericalipc-ddr3-v10.dtb \
+	rv1126-trailcamera.dtb \
 	rk3036-evb.dtb \
 	rk3036-kylin.dtb \
 	rk3066a-bqcurie2.dtb \

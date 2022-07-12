@@ -27,6 +27,41 @@ enum {
 	DP_CONF_DUAL_D,
 };
 
+/* Helper for setting/getting the pin assignement value to the configuration */
+#define DP_CONF_SET_PIN_ASSIGN(_a_)	((_a_) << 8)
+#define DP_CONF_GET_PIN_ASSIGN(_conf_)	(((_conf_) & GENMASK(15, 8)) >> 8)
+
+/* Pin assignments that use USB3.1 Gen2 signaling to carry DP protocol */
+#define DP_PIN_ASSIGN_GEN2_BR_MASK	(BIT(DP_PIN_ASSIGN_A) | \
+					 BIT(DP_PIN_ASSIGN_B))
+
+/* Pin assignments that use DP v1.3 signaling to carry DP protocol */
+#define DP_PIN_ASSIGN_DP_BR_MASK	(BIT(DP_PIN_ASSIGN_C) | \
+					 BIT(DP_PIN_ASSIGN_D) | \
+					 BIT(DP_PIN_ASSIGN_E) | \
+					 BIT(DP_PIN_ASSIGN_F))
+
+/* DP only pin assignments */
+#define DP_PIN_ASSIGN_DP_ONLY_MASK	(BIT(DP_PIN_ASSIGN_A) | \
+					 BIT(DP_PIN_ASSIGN_C) | \
+					 BIT(DP_PIN_ASSIGN_E))
+
+/* Pin assignments where one channel is for USB */
+#define DP_PIN_ASSIGN_MULTI_FUNC_MASK	(BIT(DP_PIN_ASSIGN_B) | \
+					 BIT(DP_PIN_ASSIGN_D) | \
+					 BIT(DP_PIN_ASSIGN_F))
+
+/*
+ * A UFP_U that uses a USB Type-C plug describes the pin assignments supported
+ * for the corresponding receptacle. (i.e., a UFP_D will describe the DFP_D pin
+ * assignments to which it connects), whereas a UFP_U that uses a USB Type-C
+ * receptacle describes its pin assignments directly (i.e., a UFP_D will
+ * describe its own UFP_D pin assignments).
+ */
+#define DP_CAP_PIN_ASSIGN(_cap_)	(((_cap_) & DP_CAP_RECEPTACLE) ? \
+					 DP_CAP_UFP_D_PIN_ASSIGN(_cap_) : \
+					 DP_CAP_DFP_D_PIN_ASSIGN(_cap_))
+
 enum dp_state {
 	DP_STATE_IDLE,
 	DP_STATE_ENTER,
@@ -73,14 +108,10 @@ static int dp_altmode_configure(struct dp_altmode *dp, u8 con)
 		return 0;
 	case DP_STATUS_CON_DFP_D:
 		conf |= DP_CONF_UFP_U_AS_DFP_D;
-		pin_assign = DP_CAP_UFP_D_PIN_ASSIGN(dp->alt->vdo) &
-			     DP_CAP_DFP_D_PIN_ASSIGN(dp->port->vdo);
 		break;
 	case DP_STATUS_CON_UFP_D:
 	case DP_STATUS_CON_BOTH: /* NOTE: First acting as DP source */
 		conf |= DP_CONF_UFP_U_AS_UFP_D;
-		pin_assign = DP_CAP_DFP_D_PIN_ASSIGN(dp->alt->vdo) &
-			     DP_CAP_UFP_D_PIN_ASSIGN(dp->port->vdo);
 		break;
 	default:
 		break;
@@ -88,6 +119,8 @@ static int dp_altmode_configure(struct dp_altmode *dp, u8 con)
 
 	/* Determining the initial pin assignment. */
 	if (!DP_CONF_GET_PIN_ASSIGN(dp->data.conf)) {
+		pin_assign = DP_CAP_PIN_ASSIGN(dp->alt->vdo);
+
 		/* Is USB together with DP preferred */
 		if (dp->data.status & DP_STATUS_PREFER_MULTI_FUNC &&
 		    pin_assign & DP_PIN_ASSIGN_MULTI_FUNC_MASK)
@@ -429,10 +462,7 @@ pin_assignment_store(struct device *dev, struct device_attribute *attr,
 		goto out_unlock;
 	}
 
-	if (DP_CONF_CURRENTLY(dp->data.conf) == DP_CONF_DFP_D)
-		assignments = DP_CAP_UFP_D_PIN_ASSIGN(dp->alt->vdo);
-	else
-		assignments = DP_CAP_DFP_D_PIN_ASSIGN(dp->alt->vdo);
+	assignments = DP_CAP_PIN_ASSIGN(dp->alt->vdo);
 
 	if (!(DP_CONF_GET_PIN_ASSIGN(conf) & assignments)) {
 		ret = -EINVAL;
@@ -469,10 +499,7 @@ static ssize_t pin_assignment_show(struct device *dev,
 
 	cur = get_count_order(DP_CONF_GET_PIN_ASSIGN(dp->data.conf));
 
-	if (DP_CONF_CURRENTLY(dp->data.conf) == DP_CONF_DFP_D)
-		assignments = DP_CAP_UFP_D_PIN_ASSIGN(dp->alt->vdo);
-	else
-		assignments = DP_CAP_DFP_D_PIN_ASSIGN(dp->alt->vdo);
+	assignments = DP_CAP_PIN_ASSIGN(dp->alt->vdo);
 
 	for (i = 0; assignments; assignments >>= 1, i++) {
 		if (assignments & 1) {

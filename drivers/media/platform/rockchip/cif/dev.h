@@ -415,6 +415,7 @@ struct rkcif_stream {
 	wait_queue_head_t		wq_stopped;
 	unsigned int			frame_idx;
 	int				frame_phase;
+	int				frame_phase_cache;
 	unsigned int			crop_mask;
 	/* lock between irq and buf_queue */
 	struct list_head		buf_head;
@@ -434,6 +435,7 @@ struct rkcif_stream {
 	struct rkcif_extend_info	extend_line;
 	struct rkcif_readout_stats	readout;
 	unsigned int			fs_cnt_in_single_frame;
+	unsigned int			buf_wake_up_cnt;
 	u64				line_int_cnt;
 	int				vc;
 	bool				stopping;
@@ -446,6 +448,7 @@ struct rkcif_stream {
 	bool				is_line_inten;
 	bool				is_can_stop;
 	bool				is_buf_active;
+	bool				is_high_align;
 };
 
 struct rkcif_lvds_subdev {
@@ -540,7 +543,6 @@ struct rkcif_device {
 	struct rkcif_irq_stats		irq_stats;
 	spinlock_t			hdr_lock; /* lock for hdr buf sync */
 	struct rkcif_timer		reset_watchdog_timer;
-	unsigned int			buf_wake_up_cnt;
 	struct notifier_block		reset_notifier; /* reset for mipi csi crc err */
 	struct rkcif_work_struct	reset_work;
 	unsigned int			dvp_sof_in_oneframe;

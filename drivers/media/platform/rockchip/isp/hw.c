@@ -17,6 +17,7 @@
 #include <linux/reset.h>
 #include <media/videobuf2-dma-contig.h>
 #include <media/videobuf2-dma-sg.h>
+#include <soc/rockchip/rockchip_iommu.h>
 
 #include "common.h"
 #include "dev.h"
@@ -523,10 +524,6 @@ static inline bool is_iommu_enable(struct device *dev)
 void rkisp_soft_reset(struct rkisp_hw_dev *dev, bool is_secure)
 {
 	void __iomem *base = dev->base_addr;
-	struct iommu_domain *domain = iommu_get_domain_for_dev(dev->dev);
-
-	if (domain)
-		iommu_detach_device(domain, dev->dev);
 
 	if (is_secure) {
 		/* if isp working, cru reset isn't secure.
@@ -549,8 +546,11 @@ void rkisp_soft_reset(struct rkisp_hw_dev *dev, bool is_secure)
 	writel(0xffff, base + CIF_IRCL);
 	udelay(10);
 
-	if (domain)
-		iommu_attach_device(domain, dev->dev);
+	/* refresh iommu after reset */
+	if (dev->is_mmu) {
+		rockchip_iommu_disable(dev->dev);
+		rockchip_iommu_enable(dev->dev);
+	}
 }
 
 static void isp_config_clk(struct rkisp_hw_dev *dev, int on)
@@ -729,6 +729,7 @@ static int rkisp_hw_probe(struct platform_device *pdev)
 	mutex_init(&hw_dev->dev_lock);
 	spin_lock_init(&hw_dev->rdbk_lock);
 	atomic_set(&hw_dev->refcnt, 0);
+	atomic_set(&hw_dev->tb_ref, 0);
 	spin_lock_init(&hw_dev->buf_lock);
 	INIT_LIST_HEAD(&hw_dev->list);
 	INIT_LIST_HEAD(&hw_dev->rpt_list);

@@ -287,6 +287,14 @@ disconnect:
 			}
 			break;
 		case DWC3_GCTL_PRTCAP_DEVICE:
+			if (dwc->connected) {
+				ret = wait_for_completion_timeout(&dwc->discon_done,
+						msecs_to_jiffies(DWC3_DISCON_TIMEOUT));
+				if (!ret)
+					dev_warn(dwc->dev,
+						 "timed out waiting for disconnect\n");
+			}
+
 			break;
 		case DWC3_GCTL_PRTCAP_OTG:
 			break;
@@ -1705,10 +1713,6 @@ static int dwc3_probe(struct platform_device *pdev)
 
 	dwc3_check_params(dwc);
 
-	ret = dwc3_core_init_mode(dwc);
-	if (ret)
-		goto err5;
-
 	if (!strcmp(dev_name(dev), "fe900000.dwc3")) {
 		int project_id = get_project_id();
 		int i = (project_id == 3 || project_id == 4)? 1 : 0;
@@ -1724,6 +1728,10 @@ static int dwc3_probe(struct platform_device *pdev)
 
 	dwc3_debugfs_init(dwc);
 
+	ret = dwc3_core_init_mode(dwc);
+	if (ret)
+		goto err5;
+
 	if (dwc->en_runtime)
 		async_schedule(dwc3_rockchip_async_probe, dwc);
 	else
@@ -1732,6 +1740,7 @@ static int dwc3_probe(struct platform_device *pdev)
 	return 0;
 
 err5:
+	dwc3_debugfs_exit(dwc);
 	dwc3_event_buffers_cleanup(dwc);
 
 	usb_phy_shutdown(dwc->usb2_phy);
@@ -1776,8 +1785,8 @@ static int dwc3_remove(struct platform_device *pdev)
 
 	pm_runtime_get_sync(&pdev->dev);
 
-	dwc3_debugfs_exit(dwc);
 	dwc3_core_exit_mode(dwc);
+	dwc3_debugfs_exit(dwc);
 
 	dwc3_core_exit(dwc);
 	dwc3_ulpi_exit(dwc);

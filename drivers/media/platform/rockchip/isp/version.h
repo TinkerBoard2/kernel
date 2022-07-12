@@ -152,6 +152,37 @@
  * 8.frame buffer done early
  * 9.fix set pdaf in dpcc error
  * 10.add v-blank to procfs
+ *
+ * v1.7.0:
+ * 1.off unused interrupt of csi
+ * 2.fix sp no output when hdr dynamic switch
+ * 3.check the output status of statistics v2x
+ * 4.selfpath bytesperline 16 align
+ * 5.compiled with differe hardware version
+ * 6.add frame loss info to procfs
+ * 7.remove associated of cproc and ie
+ * 8.fix input crop config for isp21 multi device
+ * 9.enable soft reset for other isp version
+ * 10.rawrd support uncompact mode
+ * 11.fix default params config for mode switch
+ * 12.before frame start to update bridge mi
+ * 13.disable tmo interrupt
+ * 14.fix bottom image for debayer with extend line
+ * 15.unregister dmarx at driver remove
+ *
+ * v1.8.0:
+ * 1.sync alloc buf with dma sg case
+ * 2.sync multi vir dev stream on/off
+ * 3.replace iommu detach/attach
+ * 4.fix CSI2RX_DATA_IDS_1 config err
+ * 5.improve snapshot feature(tb in RISC-V)
+ * 6.adjust params common api
+ * 7.fix first params config two times for readback mode
+ * 8.useless version return -EINVAL
+ * 9.fix first frame abnormal
+ * 10.dynamic memory alloc for params and stats function
+ * 11.fix rawhist weight config error for multi device
+ * 12.add csm params config for isp21
  */
 
 #define RKISP_DRIVER_VERSION RKISP_API_VERSION

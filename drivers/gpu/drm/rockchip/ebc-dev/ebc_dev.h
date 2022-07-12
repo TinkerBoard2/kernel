@@ -19,11 +19,15 @@
 #define EBC_FB_SIZE		0x200000 /* 2M */
 #define EINK_FB_SIZE		0x400000 /* 4M */
 #define DIRECT_FB_SIZE		0x100000 /* 1M */
+#define LUT_TABLE_SIZE		0x100000 /* 1M */
 
 #define MAX_FB_NUM		4
 
 #define EBC_SUCCESS		(0)
 #define EBC_ERROR		(-1)
+
+#define WF_4BIT		16
+#define WF_5BIT		32
 
 /*
  * ebc status notify
@@ -44,12 +48,12 @@
 #define EBC_DISABLE_OVERLAY	(0x7005)
 #define EBC_GET_OSD_BUFFER	(0x7006)
 #define EBC_SEND_OSD_BUFFER	(0x7007)
-
-//ebc debug ioctl command
-#define EBC_GET_AUTO_OLD_BUFFER (0x7008)
-#define EBC_GET_AUTO_NEW_BUFFER (0x7009)
-#define EBC_GET_AUTO_BG_BUFFER (0x700a)
-#define EBC_GET_AUTO_CUR_BUFFER (0x700b)
+#define EBC_NEW_BUF_PREPARE	(0x7008)
+#define EBC_SET_DIFF_PERCENT	(0x7009)
+#define EBC_WAIT_NEW_BUF_TIME (0x700a)
+#define EBC_GET_OVERLAY_STATUS	(0x700b)
+#define EBC_ENABLE_BG_CONTROL (0x700c)
+#define EBC_DISABLE_BG_CONTROL (0x700d)
 
 /*
  * IMPORTANT: Those values is corresponding to android hardware program,
@@ -98,6 +102,8 @@ struct ebc_buf_info {
 	int win_y2;
 	int width_mm;
 	int height_mm;
+	int needpic;
+	char tid_name[16];
 };
 
 #if IS_ENABLED(CONFIG_ROCKCHIP_EBC_DEV)

@@ -100,6 +100,8 @@ struct sock *dccp_create_openreq_child(const struct sock *sk,
 		newdp->dccps_hc_rx_ccid = NULL;
 		newdp->dccps_hc_tx_ccid = NULL;
 		newdp->dccps_service_list   = NULL;
+		newdp->dccps_hc_rx_ccid     = NULL;
+		newdp->dccps_hc_tx_ccid     = NULL;
 		newdp->dccps_service	    = dreq->dreq_service;
 		newdp->dccps_timestamp_echo = dreq->dreq_timestamp_echo;
 		newdp->dccps_timestamp_time = dreq->dreq_timestamp_time;

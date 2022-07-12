@@ -3,7 +3,6 @@
 snd-soc-rockchip-audio-pwm-objs := rockchip_audio_pwm.o
 snd-soc-rockchip-i2s-objs := rockchip_i2s.o
 snd-soc-rockchip-i2s-tdm-objs := rockchip_i2s_tdm.o
-snd-soc-rockchip-pcm-objs := rockchip_pcm.o
 snd-soc-rockchip-pdm-objs := rockchip_pdm.o
 snd-soc-rockchip-spdif-objs := rockchip_spdif.o
 snd-soc-rockchip-vad-objs := rockchip_vad.o

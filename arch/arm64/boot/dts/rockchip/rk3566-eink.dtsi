@@ -14,7 +14,7 @@
 		};
 
 		display_reserved: framebuffer@10900000 {
-			reg = <0x0 0x10900000 0x0 0x2000000>;
+			reg = <0x0 0x10900000 0x0 0x2c00000>;
 		};
 	};
 
@@ -77,14 +77,24 @@
 };
 
 &gpu_opp_table {
-	opp-100000000 {
-		opp-hz = /bits/ 64 <100000000>;
-		opp-microvolt = <825000>;
-	};
-	opp-150000000 {
-		opp-hz = /bits/ 64 <150000000>;
-		opp-microvolt = <825000>;
-	};
+	/delete-node/ opp-200000000;
+	/delete-node/ opp-300000000;
+};
+
+&lpddr4_params {
+	/* freq info, freq_0 is final frequency, unit: MHz */
+	freq_0 = <528>;
+	freq_1 = <324>;
+	freq_2 = <324>;
+	freq_3 = <324>;
+};
+
+&lpddr4x_params {
+	/* freq info, freq_0 is final frequency, unit: MHz */
+	freq_0 = <528>;
+	freq_1 = <324>;
+	freq_2 = <324>;
+	freq_3 = <324>;
 };
 
 &rockchip_suspend {

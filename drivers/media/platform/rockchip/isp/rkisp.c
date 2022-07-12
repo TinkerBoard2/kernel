@@ -51,6 +51,8 @@
 #include "regs.h"
 #include "rkisp_tb_helper.h"
 
+#define ISP_V4L2_EVENT_ELEMS 4
+
 #define ISP_SUBDEV_NAME DRIVER_NAME "-isp-subdev"
 /*
  * NOTE: MIPI controller and input MUX are also configured in this file,
@@ -536,11 +538,8 @@ void rkisp_trigger_read_back(struct rkisp_device *dev, u8 dma2frm, u32 mode, boo
 	}
 	dev->rd_mode = rd_mode;
 
-	/* configure hdr params in rdbk mode */
-	if (is_upd || cur_frame_id == 0)
-		rkisp_params_first_cfg(&dev->params_vdev,
-				       &dev->isp_sdev.in_fmt,
-				       dev->isp_sdev.quantization);
+	rkisp_params_first_cfg(&dev->params_vdev, &dev->isp_sdev.in_fmt,
+			       dev->isp_sdev.quantization);
 	rkisp_params_cfg(params_vdev, cur_frame_id);
 
 	if (!hw->is_single && !is_try) {
@@ -648,8 +647,7 @@ static void rkisp_rdbk_trigger_handle(struct rkisp_device *dev, u32 cmd)
 
 	if (max) {
 		v4l2_dbg(2, rkisp_debug, &dev->v4l2_dev,
-			 "handle isp%d, trigger fifo len:%d\n",
-			 id, max);
+			 "trigger fifo len:%d\n", max);
 		isp = hw->isp[id];
 		rkisp_rdbk_trigger_event(isp, T_CMD_DEQUEUE, &t);
 		isp->dmarx_dev.pre_frame = isp->dmarx_dev.cur_frame;
@@ -1416,7 +1414,7 @@ static void rkisp_start_3a_run(struct rkisp_device *dev)
 	struct v4l2_event ev = {
 		.type = CIFISP_V4L2_EVENT_STREAM_START,
 	};
-	int ret;
+	int ret = 1000;
 
 	if (!rkisp_is_need_3a(dev) || dev->isp_ver == ISP_V20 ||
 	    !params_vdev->is_subs_evt)
@@ -1428,13 +1426,13 @@ static void rkisp_start_3a_run(struct rkisp_device *dev)
 	 */
 	ret = wait_event_timeout(dev->sync_onoff,
 			params_vdev->streamon && !params_vdev->first_params,
-			msecs_to_jiffies(1000));
+			msecs_to_jiffies(ret));
 	if (!ret)
 		v4l2_warn(&dev->v4l2_dev,
 			  "waiting on params stream on event timeout\n");
 	else
 		v4l2_dbg(1, rkisp_debug, &dev->v4l2_dev,
-			 "Waiting for 3A on use %d ms\n", 1000 - ret);
+			 "Waiting for 3A on use %d ms\n", 1000 - jiffies_to_msecs(ret));
 }
 
 static void rkisp_stop_3a_run(struct rkisp_device *dev)
@@ -1444,7 +1442,7 @@ static void rkisp_stop_3a_run(struct rkisp_device *dev)
 	struct v4l2_event ev = {
 		.type = CIFISP_V4L2_EVENT_STREAM_STOP,
 	};
-	int ret;
+	int ret = 1000;
 
 	if (!rkisp_is_need_3a(dev) || dev->isp_ver == ISP_V20 ||
 	    !params_vdev->is_subs_evt)
@@ -1452,13 +1450,13 @@ static void rkisp_stop_3a_run(struct rkisp_device *dev)
 
 	v4l2_event_queue(vdev, &ev);
 	ret = wait_event_timeout(dev->sync_onoff, !params_vdev->streamon,
-				 msecs_to_jiffies(1000));
+				 msecs_to_jiffies(ret));
 	if (!ret)
 		v4l2_warn(&dev->v4l2_dev,
 			  "waiting on params stream off event timeout\n");
 	else
 		v4l2_dbg(1, rkisp_debug, &dev->v4l2_dev,
-			 "Waiting for 3A off use %d ms\n", 1000 - ret);
+			 "Waiting for 3A off use %d ms\n", 1000 - jiffies_to_msecs(ret));
 }
 
 /* Mess register operations to stop isp */
@@ -2212,6 +2210,33 @@ static void rkisp_isp_read_add_fifo_data(struct rkisp_device *dev)
 		 dev->emd_data_fifo[idx].frame_id);
 }
 
+static void rkisp_global_update_mi(struct rkisp_device *dev)
+{
+	struct rkisp_stream *stream;
+	int i;
+
+	if (dev->hw_dev->is_mi_update)
+		return;
+
+	rkisp_stats_first_ddr_config(&dev->stats_vdev);
+	rkisp_config_dmatx_valid_buf(dev);
+
+	force_cfg_update(dev);
+
+	hdr_update_dmatx_buf(dev);
+	if (dev->br_dev.en && dev->isp_ver == ISP_V20) {
+		stream = &dev->cap_dev.stream[RKISP_STREAM_SP];
+		rkisp_update_spstream_buf(stream);
+	}
+	if (dev->hw_dev->is_single) {
+		for (i = 0; i < RKISP_MAX_STREAM; i++) {
+			stream = &dev->cap_dev.stream[i];
+			if (stream->streaming)
+				stream->ops->frame_end(stream);
+		}
+	}
+}
+
 static int rkisp_isp_sd_s_stream(struct v4l2_subdev *sd, int on)
 {
 	struct rkisp_device *isp_dev = sd_to_isp_dev(sd);
@@ -2222,22 +2247,19 @@ static int rkisp_isp_sd_s_stream(struct v4l2_subdev *sd, int on)
 			isp_dev->irq_ends_mask == (ISP_FRAME_END | ISP_FRAME_IN) &&
 			(!IS_HDR_RDBK(isp_dev->rd_mode) ||
 			 isp_dev->isp_state & ISP_STOP), msecs_to_jiffies(5));
-		mutex_lock(&isp_dev->hw_dev->dev_lock);
 		rkisp_isp_stop(isp_dev);
 		atomic_dec(&isp_dev->hw_dev->refcnt);
-		mutex_unlock(&isp_dev->hw_dev->dev_lock);
 		rkisp_params_stream_stop(&isp_dev->params_vdev);
 		return 0;
 	}
 
 	rkisp_start_3a_run(isp_dev);
 	memset(&isp_dev->isp_sdev.dbg, 0, sizeof(isp_dev->isp_sdev.dbg));
-	mutex_lock(&isp_dev->hw_dev->dev_lock);
 	atomic_inc(&isp_dev->hw_dev->refcnt);
 	atomic_set(&isp_dev->isp_sdev.frm_sync_seq, 0);
+	rkisp_global_update_mi(isp_dev);
 	rkisp_config_cif(isp_dev);
 	rkisp_isp_start(isp_dev);
-	mutex_unlock(&isp_dev->hw_dev->dev_lock);
 	rkisp_rdbk_trigger_event(isp_dev, T_CMD_QUEUE, NULL);
 	return 0;
 }
@@ -2246,6 +2268,9 @@ static int rkisp_isp_sd_s_power(struct v4l2_subdev *sd, int on)
 {
 	struct rkisp_device *isp_dev = sd_to_isp_dev(sd);
 	int ret;
+
+	if (isp_dev->hw_dev->is_thunderboot)
+		return 0;
 
 	v4l2_dbg(1, rkisp_debug, &isp_dev->v4l2_dev,
 		 "%s on:%d\n", __func__, on);
@@ -2440,7 +2465,7 @@ static int rkisp_isp_sd_subs_evt(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 	if (sub->id != 0)
 		return -EINVAL;
 
-	return v4l2_event_subscribe(fh, sub, 0, NULL);
+	return v4l2_event_subscribe(fh, sub, ISP_V4L2_EVENT_ELEMS, NULL);
 }
 
 static long rkisp_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
@@ -2448,8 +2473,6 @@ static long rkisp_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	struct rkisp_device *isp_dev = sd_to_isp_dev(sd);
 	struct rkisp_thunderboot_resmem *resmem;
 	struct rkisp_thunderboot_resmem_head *head;
-	struct rkisp_ldchbuf_info *ldchbuf;
-	struct rkisp_ldchbuf_size *ldchsize;
 	struct rkisp_thunderboot_shmem *shmem;
 	struct isp2x_buf_idxfd *idxfd;
 	void *resmem_va;
@@ -2461,15 +2484,6 @@ static long rkisp_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	switch (cmd) {
 	case RKISP_CMD_TRIGGER_READ_BACK:
 		rkisp_rdbk_trigger_event(isp_dev, T_CMD_QUEUE, arg);
-		break;
-	case RKISP_CMD_CSI_MEMORY_MODE:
-		if (*((int *)arg) == CSI_MEM_BYTE_BE)
-			isp_dev->csi_dev.memory = SW_CSI_RWA_WR_SIMG_SWP |
-						SW_CSI_RAW_WR_SIMG_MODE;
-		else if (*((int *)arg) == CSI_MEM_BYTE_LE)
-			isp_dev->csi_dev.memory = SW_CSI_RAW_WR_SIMG_MODE;
-		else
-			isp_dev->csi_dev.memory = 0;
 		break;
 	case RKISP_CMD_GET_SHARED_BUF:
 		resmem = (struct rkisp_thunderboot_resmem *)arg;
@@ -2514,12 +2528,12 @@ static long rkisp_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		isp_dev->resmem_size = 0;
 		break;
 	case RKISP_CMD_GET_LDCHBUF_INFO:
-		ldchbuf = (struct rkisp_ldchbuf_info *)arg;
-		rkisp_params_get_ldchbuf_inf(&isp_dev->params_vdev, ldchbuf);
+	case RKISP_CMD_GET_MESHBUF_INFO:
+		rkisp_params_get_meshbuf_inf(&isp_dev->params_vdev, arg);
 		break;
 	case RKISP_CMD_SET_LDCHBUF_SIZE:
-		ldchsize = (struct rkisp_ldchbuf_size *)arg;
-		rkisp_params_set_ldchbuf_size(&isp_dev->params_vdev, ldchsize);
+	case RKISP_CMD_SET_MESHBUF_SIZE:
+		rkisp_params_set_meshbuf_size(&isp_dev->params_vdev, arg);
 		break;
 	case RKISP_CMD_GET_SHM_BUFFD:
 		shmem = (struct rkisp_thunderboot_shmem *)arg;
@@ -2545,10 +2559,11 @@ static long rkisp_compat_ioctl32(struct v4l2_subdev *sd,
 	struct rkisp_thunderboot_resmem resmem;
 	struct rkisp_ldchbuf_info ldchbuf;
 	struct rkisp_ldchbuf_size ldchsize;
+	struct rkisp_meshbuf_info meshbuf;
+	struct rkisp_meshbuf_size meshsize;
 	struct rkisp_thunderboot_shmem shmem;
 	struct isp2x_buf_idxfd idxfd;
 	long ret = 0;
-	int mode;
 
 	if (!up && cmd != RKISP_CMD_FREE_SHARED_BUF)
 		return -EINVAL;
@@ -2558,11 +2573,6 @@ static long rkisp_compat_ioctl32(struct v4l2_subdev *sd,
 		if (copy_from_user(&trigger, up, sizeof(trigger)))
 			return -EFAULT;
 		ret = rkisp_ioctl(sd, cmd, &trigger);
-		break;
-	case RKISP_CMD_CSI_MEMORY_MODE:
-		if (copy_from_user(&mode, up, sizeof(int)))
-			return -EFAULT;
-		ret = rkisp_ioctl(sd, cmd, &mode);
 		break;
 	case RKISP_CMD_GET_SHARED_BUF:
 		ret = rkisp_ioctl(sd, cmd, &resmem);
@@ -2581,6 +2591,18 @@ static long rkisp_compat_ioctl32(struct v4l2_subdev *sd,
 		if (copy_from_user(&ldchsize, up, sizeof(ldchsize)))
 			return -EFAULT;
 		ret = rkisp_ioctl(sd, cmd, &ldchsize);
+		break;
+	case RKISP_CMD_GET_MESHBUF_INFO:
+		if (copy_from_user(&meshsize, up, sizeof(meshsize)))
+			return -EFAULT;
+		ret = rkisp_ioctl(sd, cmd, &meshbuf);
+		if (!ret && copy_to_user(up, &meshbuf, sizeof(meshbuf)))
+			ret = -EFAULT;
+		break;
+	case RKISP_CMD_SET_MESHBUF_SIZE:
+		if (copy_from_user(&meshsize, up, sizeof(meshsize)))
+			return -EFAULT;
+		ret = rkisp_ioctl(sd, cmd, &meshsize);
 		break;
 	case RKISP_CMD_GET_SHM_BUFFD:
 		if (copy_from_user(&shmem, up, sizeof(shmem)))
@@ -2755,23 +2777,22 @@ void rkisp_chk_tb_over(struct rkisp_device *isp_dev)
 	enum rkisp_tb_state tb_state;
 	void *resmem_va;
 
-	if (!isp_dev->resmem_pa || !isp_dev->resmem_size) {
-		v4l2_info(&isp_dev->v4l2_dev,
-			  "no reserved memory for thunderboot\n");
-		if (isp_dev->hw_dev->is_thunderboot) {
-			rkisp_tb_set_state(RKISP_TB_NG);
-			rkisp_tb_unprotect_clk();
-			rkisp_register_irq(isp_dev->hw_dev);
-			isp_dev->hw_dev->is_thunderboot = false;
-		}
+	if (!isp_dev->hw_dev->is_thunderboot)
+		return;
+
+	if (!atomic_read(&isp_dev->hw_dev->tb_ref)) {
+		rkisp_tb_set_state(RKISP_TB_NG);
+		rkisp_tb_unprotect_clk();
+		rkisp_register_irq(isp_dev->hw_dev);
+		isp_dev->hw_dev->is_thunderboot = false;
 		return;
 	}
 
 	resmem_va = phys_to_virt(isp_dev->resmem_pa);
 	head = (struct rkisp_thunderboot_resmem_head *)resmem_va;
-	if (isp_dev->hw_dev->is_thunderboot) {
+	if (isp_dev->is_thunderboot) {
 		shm_head_poll_timeout(isp_dev, !!head->enable, 2000, 200 * USEC_PER_MSEC);
-		shm_head_poll_timeout(isp_dev, !!head->complete, 5000, 500 * USEC_PER_MSEC);
+		shm_head_poll_timeout(isp_dev, !!head->complete, 5000, 600 * USEC_PER_MSEC);
 		if (head->complete != RKISP_TB_OK)
 			v4l2_info(&isp_dev->v4l2_dev,
 				  "wait thunderboot over timeout\n");
@@ -2791,11 +2812,13 @@ void rkisp_chk_tb_over(struct rkisp_device *isp_dev)
 			head->frm_total = 0;
 			tb_state = RKISP_TB_NG;
 		}
-
 		rkisp_tb_set_state(tb_state);
 		rkisp_tb_unprotect_clk();
 		rkisp_register_irq(isp_dev->hw_dev);
+		pm_runtime_put(isp_dev->hw_dev->dev);
 		isp_dev->hw_dev->is_thunderboot = false;
+		isp_dev->is_thunderboot = false;
+		atomic_dec(&isp_dev->hw_dev->tb_ref);
 	}
 }
 #endif

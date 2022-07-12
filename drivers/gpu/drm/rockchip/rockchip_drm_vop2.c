@@ -137,9 +137,6 @@
 
 #define VOP2_CLUSTER_YUV444_10 0x12
 
-#define VOP2_COLOR_KEY_NONE		(0 << 31)
-#define VOP2_COLOR_KEY_MASK		(1 << 31)
-
 enum vop2_data_format {
 	VOP2_FMT_ARGB8888 = 0,
 	VOP2_FMT_RGB888,
@@ -557,6 +554,29 @@ struct vop2 {
 
 	/* no move win from one vp to another */
 	bool disable_win_move;
+	/*
+	 * Usually we increase old fb refcount at
+	 * atomic_flush and decrease it when next
+	 * vsync come, this can make user the fb
+	 * not been releasced before vop finish use
+	 * it.
+	 *
+	 * But vop decrease fb refcount by a thread
+	 * vop2_unref_fb_work, which may run a little
+	 * slow sometimes, so when userspace do a rmfb,
+	 *
+	 * see drm_mode_rmfb,
+	 * it will find the fb refcount is still > 1,
+	 * than goto a fallback to init drm_mode_rmfb_work_fn,
+	 * this will cost a long time(>10 ms maybe) and block
+	 * rmfb work. Some userspace don't have with this(such as vo).
+	 *
+	 * Don't reference framebuffer refcount by
+	 * drm_framebuffer_get as some userspace want
+	 * rmfb as soon as possible(nvr vo). And the userspace
+	 * should make sure release fb after it receive the vsync.
+	 */
+	bool skip_ref_fb;
 
 	bool loader_protect;
 
@@ -1037,20 +1057,22 @@ static int32_t vop2_pending_done_bits(struct vop2_video_port *vp)
 		if (first_vp_left_time > first_vp_safe_time &&
 		    second_vp_left_time > second_vp_safe_time)
 			return done_bits_bak;
-		if (first_vp_left_time > second_vp_left_time)
-			wait_vp = first_done_vp;
-		else
-			wait_vp = second_done_vp;
+
+		if (first_vp_left_time > second_vp_left_time) {
+			if ((first_vp_left_time - second_vp_left_time) > first_vp_safe_time)
+				wait_vp = second_done_vp;
+			else
+				wait_vp = first_done_vp;
+		} else {
+			if ((second_vp_left_time - first_vp_left_time) > second_vp_safe_time)
+				wait_vp = first_done_vp;
+			else
+				wait_vp = second_done_vp;
+		}
 
 		vop2_wait_for_fs_by_done_bit_status(wait_vp);
 
 		done_bits = vop2_readl(vop2, RK3568_REG_CFG_DONE) & 0x7;
-		if (done_bits) {
-			vp_id = ffs(done_bits) - 1;
-			done_vp = &vop2->vps[vp_id];
-			vop2_wait_for_fs_by_done_bit_status(done_vp);
-		}
-		done_bits = 0;
 	}
 	return done_bits;
 }
@@ -1226,6 +1248,7 @@ static enum vop2_afbc_format vop2_convert_afbc_format(uint32_t format)
 	case DRM_FORMAT_NV12_10:
 		return VOP2_AFBC_FMT_YUV420_10BIT;
 	case DRM_FORMAT_NV16:
+	case DRM_FORMAT_YUYV:
 		return VOP2_AFBC_FMT_YUV422;
 	case DRM_FORMAT_NV16_10:
 		return VOP2_AFBC_FMT_YUV422_10BIT;
@@ -1293,6 +1316,7 @@ static bool vop2_afbc_uv_swap(uint32_t format)
 	switch (format) {
 	case DRM_FORMAT_NV12:
 	case DRM_FORMAT_NV16:
+	case DRM_FORMAT_YUYV:
 	case DRM_FORMAT_NV12_10:
 	case DRM_FORMAT_NV16_10:
 		return true;
@@ -2344,6 +2368,23 @@ static void vop2_crtc_load_lut(struct drm_crtc *crtc)
 	vp->gamma_lut_active = true;
 
 	spin_unlock(&vop2->reg_lock);
+/*
+ * maybe appear the following case:
+ * -> set gamma
+ * -> config done
+ * -> atomic commit
+ *  --> update win format
+ *  --> update win address
+ *  ---> here maybe meet vop hardware frame start, and triggle some config take affect.
+ *  ---> as only some config take affect, this maybe lead to iommu pagefault.
+ *  --> update win size
+ *  --> update win other parameters
+ * -> config done
+ *
+ * so we add readx_poll_timeout() to make sure the first config done take
+ * effect and then to do next frame config.
+ */
+	readx_poll_timeout(CTRL_GET, dsp_lut_en, dle, dle, 5, 33333);
 #undef CTRL_GET
 }
 
@@ -2927,7 +2968,7 @@ static void vop2_plane_setup_color_key(struct drm_plane *plane)
 	uint32_t g = 0;
 	uint32_t b = 0;
 
-	if (!(vpstate->color_key & VOP2_COLOR_KEY_MASK) || fb->format->is_yuv) {
+	if (!(vpstate->color_key & VOP_COLOR_KEY_MASK) || fb->format->is_yuv) {
 		VOP_WIN_SET(vop2, win, color_key_en, 0);
 		return;
 	}
@@ -3377,6 +3418,7 @@ static void vop2_atomic_plane_reset(struct drm_plane *plane)
 	plane->state->plane = plane;
 	plane->state->zpos = win->zpos;
 	plane->state->alpha = DRM_BLEND_ALPHA_OPAQUE;
+	plane->state->rotation = DRM_MODE_ROTATE_0;
 }
 
 static struct drm_plane_state *vop2_atomic_plane_duplicate_state(struct drm_plane *plane)
@@ -3990,6 +4032,7 @@ static u64 vop2_calc_max_bandwidth(struct vop2_bandwidth *bw, int start,
 
 static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 				  struct drm_crtc_state *crtc_state,
+				  size_t *frame_bw_mbyte,
 				  unsigned int *plane_num_total)
 {
 	struct drm_display_mode *adjusted_mode = &crtc_state->adjusted_mode;
@@ -4001,7 +4044,7 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 	struct drm_plane_state *pstate;
 	struct vop2_bandwidth *pbandwidth;
 	struct drm_plane *plane;
-	uint64_t bandwidth;
+	uint64_t line_bandwidth;
 	int8_t cnt = 0, plane_num = 0;
 #if defined(CONFIG_ROCKCHIP_DRM_DEBUG)
 	struct vop_dump_list *pos, *n;
@@ -4034,29 +4077,39 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 	if (!pbandwidth)
 		return -ENOMEM;
 	drm_atomic_crtc_state_for_each_plane(plane, crtc_state) {
+		int act_w, act_h, bpp, afbc_fac;
+
 		pstate = drm_atomic_get_new_plane_state(state, plane);
 		if (!pstate || pstate->crtc != crtc || !pstate->fb)
 			continue;
+		/* This is an empirical value, if it's afbc format, the frame buffer size div 2 */
+		afbc_fac = rockchip_afbc(plane, pstate->fb->modifier) ? 2 : 1;
 
 		vpstate = to_vop2_plane_state(pstate);
 		pbandwidth[cnt].y1 = vpstate->dest.y1;
 		pbandwidth[cnt].y2 = vpstate->dest.y2;
-		pbandwidth[cnt++].bandwidth = vop2_plane_line_bandwidth(pstate);
+		pbandwidth[cnt++].bandwidth = vop2_plane_line_bandwidth(pstate) / afbc_fac;
+
+		act_w = drm_rect_width(&pstate->src) >> 16;
+		act_h = drm_rect_height(&pstate->src) >> 16;
+		bpp = pstate->fb->format->bpp[0];
+
+		*frame_bw_mbyte += act_w * act_h / 1000 * bpp / 8 * adjusted_mode->vrefresh / afbc_fac / 1000;
 	}
 
 	sort(pbandwidth, cnt, sizeof(pbandwidth[0]), vop2_bandwidth_cmp, NULL);
 
-	bandwidth = vop2_calc_max_bandwidth(pbandwidth, 0, cnt, vdisplay);
+	line_bandwidth = vop2_calc_max_bandwidth(pbandwidth, 0, cnt, vdisplay);
 	kfree(pbandwidth);
 	/*
-	 * bandwidth(MB/s)
-	 *    = line_bandwidth / line_time
+	 * line_bandwidth(MB/s)
+	 *    = line_bandwidth(Byte) / line_time(s)
 	 *    = line_bandwidth(Byte) * clock(KHZ) / 1000 / htotal
 	 */
-	bandwidth *= clock;
-	do_div(bandwidth, htotal * 1000);
+	line_bandwidth *= clock;
+	do_div(line_bandwidth, htotal * 1000);
 
-	return bandwidth;
+	return line_bandwidth;
 }
 
 static void vop2_crtc_close(struct drm_crtc *crtc)
@@ -4257,7 +4310,6 @@ static void vop2_crtc_atomic_enable(struct drm_crtc *crtc, struct drm_crtc_state
 	u16 vact_end = vact_st + vdisplay;
 	bool interlaced = !!(adjusted_mode->flags & DRM_MODE_FLAG_INTERLACE);
 	uint8_t out_mode;
-	int for_ddr_freq = 0;
 	bool dclk_inv, yc_swap = false;
 	int act_end;
 	uint32_t val;
@@ -4438,12 +4490,16 @@ static void vop2_crtc_atomic_enable(struct drm_crtc *crtc, struct drm_crtc_state
 	}
 
 	VOP_INTR_SET(vop2, intr, line_flag_num[0], act_end);
-	VOP_INTR_SET(vop2, intr, line_flag_num[1],
-		     act_end - us_to_vertical_line(adjusted_mode, for_ddr_freq));
+	VOP_INTR_SET(vop2, intr, line_flag_num[1], act_end);
 
 	VOP_MODULE_SET(vop2, vp, vtotal_pw, vtotal << 16 | vsync_len);
 
-	VOP_MODULE_SET(vop2, vp, core_dclk_div, !!(adjusted_mode->flags & DRM_MODE_FLAG_DBLCLK));
+	if (adjusted_mode->flags & DRM_MODE_FLAG_DBLCLK ||
+	    vcstate->output_if & VOP_OUTPUT_IF_BT656)
+		VOP_MODULE_SET(vop2, vp, core_dclk_div, 1);
+	else
+		VOP_MODULE_SET(vop2, vp, core_dclk_div, 0);
+
 	if (vcstate->output_mode == ROCKCHIP_OUT_MODE_YUV420) {
 		VOP_MODULE_SET(vop2, vp, dclk_div2, 1);
 		VOP_MODULE_SET(vop2, vp, dclk_div2_phase_lock, 1);
@@ -5362,8 +5418,8 @@ static void vop2_crtc_atomic_flush(struct drm_crtc *crtc, struct drm_crtc_state 
 
 		if (old_pstate->fb == plane->state->fb)
 			continue;
-
-		drm_framebuffer_get(old_pstate->fb);
+		if (!vop2->skip_ref_fb)
+			drm_framebuffer_get(old_pstate->fb);
 		WARN_ON(drm_crtc_vblank_get(crtc) != 0);
 		drm_flip_work_queue(&vp->fb_unref_work, old_pstate->fb);
 		set_bit(VOP_PENDING_FB_UNREF, &vp->pending);
@@ -5621,7 +5677,8 @@ static void vop2_fb_unref_worker(struct drm_flip_work *work, void *val)
 	struct drm_framebuffer *fb = val;
 
 	drm_crtc_vblank_put(&vp->crtc);
-	drm_framebuffer_put(fb);
+	if (!vp->vop2->skip_ref_fb)
+		drm_framebuffer_put(fb);
 }
 
 static void vop2_handle_vblank(struct vop2 *vop2, struct drm_crtc *crtc)
@@ -6083,7 +6140,8 @@ static void vop2_cubic_lut_init(struct vop2 *vop2)
 }
 
 static int vop2_crtc_create_plane_mask_property(struct vop2 *vop2,
-						struct drm_crtc *crtc)
+						struct drm_crtc *crtc,
+						uint32_t plane_mask)
 {
 	struct drm_property *prop;
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
@@ -6111,10 +6169,13 @@ static int vop2_crtc_create_plane_mask_property(struct vop2 *vop2,
 	}
 
 	vp->plane_mask_prop = prop;
-	drm_object_attach_property(&crtc->base, vp->plane_mask_prop, vp->plane_mask);
+	drm_object_attach_property(&crtc->base, vp->plane_mask_prop, plane_mask);
 
 	return 0;
 }
+
+#define RK3566_MIRROR_PLANE_MASK (BIT(ROCKCHIP_VOP2_CLUSTER1) | BIT(ROCKCHIP_VOP2_ESMART1) | \
+				  BIT(ROCKCHIP_VOP2_SMART1))
 
 static int vop2_create_crtc(struct vop2 *vop2)
 {
@@ -6131,6 +6192,7 @@ static int vop2_create_crtc(struct vop2 *vop2)
 	uint32_t possible_crtcs;
 	uint64_t soc_id;
 	uint32_t registered_num_crtcs = 0;
+	uint32_t plane_mask = 0;
 	char dclk_name[9];
 	int i = 0, j = 0, k = 0;
 	int ret = 0;
@@ -6200,10 +6262,20 @@ static int vop2_create_crtc(struct vop2 *vop2)
 		crtc->port = port;
 		of_property_read_u32(port, "cursor-win-id", &vp->cursor_win_id);
 
+		plane_mask = vp->plane_mask;
+		if (vop2_soc_is_rk3566()) {
+			if ((vp->plane_mask & RK3566_MIRROR_PLANE_MASK) &&
+			    (vp->plane_mask & ~RK3566_MIRROR_PLANE_MASK)) {
+				plane_mask &= ~RK3566_MIRROR_PLANE_MASK;
+			}
+		}
+
 		if (vp->primary_plane_phy_id >= 0) {
 			win = vop2_find_win_by_phys_id(vop2, vp->primary_plane_phy_id);
-			if (win)
+			if (win) {
 				find_primary_plane = true;
+				win->type = DRM_PLANE_TYPE_PRIMARY;
+			}
 		} else {
 			while (j < vop2->registered_num_wins) {
 				be_used_for_primary_plane = false;
@@ -6285,7 +6357,7 @@ static int vop2_create_crtc(struct vop2 *vop2)
 					   drm_dev->mode_config.tv_top_margin_property, 100);
 		drm_object_attach_property(&crtc->base,
 					   drm_dev->mode_config.tv_bottom_margin_property, 100);
-		vop2_crtc_create_plane_mask_property(vop2, crtc);
+		vop2_crtc_create_plane_mask_property(vop2, crtc, plane_mask);
 		registered_num_crtcs++;
 	}
 
@@ -6519,6 +6591,7 @@ static int vop2_bind(struct device *dev, struct device *master, void *data)
 	vop2->support_multi_area = of_property_read_bool(dev->of_node, "support-multi-area");
 	vop2->disable_afbc_win = of_property_read_bool(dev->of_node, "disable-afbc-win");
 	vop2->disable_win_move = of_property_read_bool(dev->of_node, "disable-win-move");
+	vop2->skip_ref_fb = of_property_read_bool(dev->of_node, "skip-ref-fb");
 
 	ret = vop2_win_init(vop2);
 	if (ret)

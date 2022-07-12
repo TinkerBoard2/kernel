@@ -11,18 +11,29 @@
 
 #define RKMODULE_API_VERSION		KERNEL_VERSION(0, 1, 0x2)
 
+/* using for rk3588 dual isp unite */
+#define RKMOUDLE_UNITE_EXTEND_PIXEL	128
 /* using for rv1109 and rv1126 */
 #define RKMODULE_EXTEND_LINE		24
 
 #define RKMODULE_NAME_LEN		32
-#define RKMODULE_LSCDATA_LEN		441
+#define RKMODULE_LSCDATA_LEN		289
 
 #define RKMODULE_MAX_VC_CH		4
+
+#define RKMODULE_PADF_GAINMAP_LEN	1024
+#define RKMODULE_PDAF_DCCMAP_LEN	256
+#define RKMODULE_AF_OTP_MAX_LEN		3
 
 #define RKMODULE_CAMERA_MODULE_INDEX	"rockchip,camera-module-index"
 #define RKMODULE_CAMERA_MODULE_FACING	"rockchip,camera-module-facing"
 #define RKMODULE_CAMERA_MODULE_NAME	"rockchip,camera-module-name"
 #define RKMODULE_CAMERA_LENS_NAME	"rockchip,camera-module-lens-name"
+
+#define RKMODULE_CAMERA_SYNC_MODE	"rockchip,camera-module-sync-mode"
+#define RKMODULE_INTERNAL_MASTER_MODE	"internal_master"
+#define RKMODULE_EXTERNAL_MASTER_MODE	"external_master"
+#define RKMODULE_SLAVE_MODE		"slave"
 
 /* BT.656 & BT.1120 multi channel
  * On which channels it can send video data
@@ -103,6 +114,64 @@
 #define RKMODULE_GET_SONY_BRL	\
 	_IOR('V', BASE_VIDIOC_PRIVATE + 19, __u32)
 
+#define RKMODULE_GET_CHANNEL_INFO	\
+	_IOWR('V', BASE_VIDIOC_PRIVATE + 20, struct rkmodule_channel_info)
+
+#define RKMODULE_GET_SYNC_MODE       \
+	_IOR('V', BASE_VIDIOC_PRIVATE + 21, __u32)
+
+#define RKMODULE_SET_SYNC_MODE       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 22, __u32)
+
+#define RKMODULE_SET_MCLK       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 23, __u32)
+
+#define RKMODULE_SET_LINK_FREQ       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 24, __s64)
+
+#define RKMODULE_SET_BUS_CONFIG       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 25, struct rkmodule_bus_config)
+
+#define RKMODULE_GET_BUS_CONFIG       \
+	_IOR('V', BASE_VIDIOC_PRIVATE + 26, struct rkmodule_bus_config)
+
+#define RKMODULE_SET_REGISTER       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 27, struct rkmodule_reg)
+
+#define RKMODULE_SYNC_I2CDEV       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 28, __u8)
+
+#define RKMODULE_SYNC_I2CDEV_COMPLETE       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 29, __u8)
+
+/* csi0/csi1 phy support full/split mode */
+enum rkmodule_phy_mode {
+	PHY_FULL_MODE,
+	PHY_SPLIT_01,
+	PHY_SPLIT_23,
+};
+
+struct rkmodule_mipi_lvds_bus {
+	__u32 bus_type;
+	__u32 lanes;
+	__u32 phy_mode; /* data type enum rkmodule_phy_mode */
+};
+
+struct rkmodule_bus_config {
+	union {
+		struct rkmodule_mipi_lvds_bus bus;
+		__u32 reserved[32];
+	};
+} __attribute__ ((packed));
+
+struct rkmodule_reg {
+	__u64 num_regs;
+	__u64 preg_addr;
+	__u64 preg_value;
+	__u64 preg_addr_bytes;
+	__u64 preg_value_bytes;
+} __attribute__ ((packed));
+
 /**
  * struct rkmodule_base_inf - module base information
  *
@@ -160,7 +229,29 @@ struct rkmodule_lsc_inf {
 	__u16 lsc_b[RKMODULE_LSCDATA_LEN];
 	__u16 lsc_gr[RKMODULE_LSCDATA_LEN];
 	__u16 lsc_gb[RKMODULE_LSCDATA_LEN];
+
+	__u16 width;
+	__u16 height;
+	__u16 table_size;
 } __attribute__ ((packed));
+
+/**
+ * enum rkmodule_af_dir - enum of module af otp direction
+ */
+enum rkmodele_af_otp_dir {
+	AF_OTP_DIR_HORIZONTAL = 0,
+	AF_OTP_DIR_UP = 1,
+	AF_OTP_DIR_DOWN = 2,
+};
+
+/**
+ * struct rkmodule_af_otp - module af otp in one direction
+ */
+struct rkmodule_af_otp {
+	__u32 vcm_start;
+	__u32 vcm_end;
+	__u32 vcm_dir;
+};
 
 /**
  * struct rkmodule_af_inf - module af information
@@ -168,10 +259,47 @@ struct rkmodule_lsc_inf {
  */
 struct rkmodule_af_inf {
 	__u32 flag;
+	__u32 dir_cnt;
+	struct rkmodule_af_otp af_otp[RKMODULE_AF_OTP_MAX_LEN];
+} __attribute__ ((packed));
 
-	__u32 vcm_start;
-	__u32 vcm_end;
-	__u32 vcm_dir;
+/**
+ * struct rkmodule_pdaf_inf - module pdaf information
+ *
+ */
+struct rkmodule_pdaf_inf {
+	__u32 flag;
+
+	__u32 gainmap_width;
+	__u32 gainmap_height;
+	__u32 dccmap_width;
+	__u32 dccmap_height;
+	__u32 dcc_mode;
+	__u32 dcc_dir;
+	__u16 gainmap[RKMODULE_PADF_GAINMAP_LEN];
+	__u16 dccmap[RKMODULE_PDAF_DCCMAP_LEN];
+} __attribute__ ((packed));
+
+/**
+ * struct rkmodule_otp_module_inf - otp module info
+ *
+ */
+struct rkmodule_otp_module_inf {
+	__u32 flag;
+	__u8 vendor[8];
+	__u32 module_id;
+	__u16 version;
+	__u16 full_width;
+	__u16 full_height;
+	__u8 supplier_id;
+	__u8 year;
+	__u8 mouth;
+	__u8 day;
+	__u8 sensor_id;
+	__u8 lens_id;
+	__u8 vcm_id;
+	__u8 drv_id;
+	__u8 flip;
 } __attribute__ ((packed));
 
 /**
@@ -184,6 +312,8 @@ struct rkmodule_inf {
 	struct rkmodule_awb_inf awb;
 	struct rkmodule_lsc_inf lsc;
 	struct rkmodule_af_inf af;
+	struct rkmodule_pdaf_inf pdaf;
+	struct rkmodule_otp_module_inf module_inf;
 } __attribute__ ((packed));
 
 /**
@@ -433,4 +563,23 @@ struct rkmodule_dcg_ratio {
 	__u32 div_coeff;
 };
 
+struct rkmodule_channel_info {
+	__u32 index;
+	__u32 vc;
+	__u32 width;
+	__u32 height;
+	__u32 bus_fmt;
+	__u32 data_type;
+	__u32 data_bit;
+} __attribute__ ((packed));
+
+/*
+ * sensor exposure sync mode
+ */
+enum rkmodule_sync_mode {
+	NO_SYNC_MODE = 0,
+	EXTERNAL_MASTER_MODE,
+	INTERNAL_MASTER_MODE,
+	SLAVE_MODE,
+};
 #endif /* _UAPI_RKMODULE_CAMERA_H */

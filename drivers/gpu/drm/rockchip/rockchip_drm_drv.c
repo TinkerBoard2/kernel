@@ -21,7 +21,7 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_of.h>
 #include <linux/devfreq.h>
-#include <linux/dma-buf.h>
+#include <linux/dma-buf-cache.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-iommu.h>
 #include <linux/genalloc.h>
@@ -213,7 +213,7 @@ int rockchip_drm_add_modes_noedid(struct drm_connector *connector)
 }
 EXPORT_SYMBOL(rockchip_drm_add_modes_noedid);
 
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if !defined(CONFIG_DMABUF_CACHE)
 struct drm_prime_callback_data {
 	struct drm_gem_object *obj;
 	struct sg_table *sgt;
@@ -1809,7 +1809,8 @@ static void rockchip_drm_lastclose(struct drm_device *dev)
 }
 
 static struct drm_pending_vblank_event *
-rockchip_drm_add_vcnt_event(struct drm_crtc *crtc, struct drm_file *file_priv)
+rockchip_drm_add_vcnt_event(struct drm_crtc *crtc, union drm_wait_vblank *vblwait,
+			    struct drm_file *file_priv)
 {
 	struct drm_pending_vblank_event *e;
 	struct drm_device *dev = crtc->dev;
@@ -1823,8 +1824,7 @@ rockchip_drm_add_vcnt_event(struct drm_crtc *crtc, struct drm_file *file_priv)
 	e->event.base.type = DRM_EVENT_ROCKCHIP_CRTC_VCNT;
 	e->event.base.length = sizeof(e->event.vbl);
 	e->event.vbl.crtc_id = crtc->base.id;
-	/* store crtc pipe id */
-	e->event.vbl.user_data = e->pipe;
+	e->event.vbl.user_data = vblwait->request.signal;
 
 	spin_lock_irqsave(&dev->event_lock, flags);
 	drm_event_reserve_init_locked(dev, file_priv, &e->base, &e->event.base);
@@ -1852,7 +1852,7 @@ static int rockchip_drm_get_vcnt_event_ioctl(struct drm_device *dev, void *data,
 	crtc = drm_crtc_from_index(dev, pipe);
 
 	if (flags & _DRM_ROCKCHIP_VCNT_EVENT) {
-		e = rockchip_drm_add_vcnt_event(crtc, file_priv);
+		e = rockchip_drm_add_vcnt_event(crtc, vblwait, file_priv);
 		priv->vcnt[pipe].event = e;
 	}
 
@@ -1935,7 +1935,7 @@ static const struct dma_buf_ops rockchip_drm_gem_prime_dmabuf_ops = {
 	.end_cpu_access_partial = rockchip_drm_gem_end_cpu_access_partial,
 };
 
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if !defined(CONFIG_DMABUF_CACHE)
 static void drm_gem_prime_dmabuf_release_callback(void *data)
 {
 	struct drm_prime_callback_data *cb_data = data;
@@ -1961,7 +1961,7 @@ static struct drm_gem_object *rockchip_drm_gem_prime_import_dev(struct drm_devic
 	struct dma_buf_attachment *attach;
 	struct sg_table *sgt;
 	struct drm_gem_object *obj;
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if !defined(CONFIG_DMABUF_CACHE)
 	struct drm_prime_callback_data *cb_data = NULL;
 #endif
 	int ret;
@@ -1978,7 +1978,7 @@ static struct drm_gem_object *rockchip_drm_gem_prime_import_dev(struct drm_devic
 		}
 	}
 
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if !defined(CONFIG_DMABUF_CACHE)
 	cb_data = dma_buf_get_release_callback_data(dma_buf,
 					drm_gem_prime_dmabuf_release_callback);
 	if (cb_data && cb_data->obj && cb_data->obj->dev == dev) {
@@ -1996,7 +1996,7 @@ static struct drm_gem_object *rockchip_drm_gem_prime_import_dev(struct drm_devic
 
 	get_dma_buf(dma_buf);
 
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if !defined(CONFIG_DMABUF_CACHE)
 	cb_data = kmalloc(sizeof(*cb_data), GFP_KERNEL);
 	if (!cb_data) {
 		ret = -ENOMEM;
@@ -2018,7 +2018,7 @@ static struct drm_gem_object *rockchip_drm_gem_prime_import_dev(struct drm_devic
 
 	obj->import_attach = attach;
 
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if !defined(CONFIG_DMABUF_CACHE)
 	cb_data->obj = obj;
 	cb_data->sgt = sgt;
 	dma_buf_set_release_callback(dma_buf,
@@ -2032,7 +2032,7 @@ static struct drm_gem_object *rockchip_drm_gem_prime_import_dev(struct drm_devic
 fail_unmap:
 	dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
 fail_detach:
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if !defined(CONFIG_DMABUF_CACHE)
 	kfree(cb_data);
 #endif
 	dma_buf_detach(dma_buf, attach);

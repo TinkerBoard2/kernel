@@ -124,7 +124,9 @@ void hdr_destroy_buf(struct rkisp_device *dev)
 	if (atomic_read(&dev->cap_dev.refcnt) > 1 ||
 	    !dev->active_sensor ||
 	    (dev->active_sensor &&
-	     dev->active_sensor->mbus.type != V4L2_MBUS_CSI2))
+	     dev->active_sensor->mbus.type != V4L2_MBUS_CSI2) ||
+	    (dev->isp_inp & INP_CIF) ||
+	    (dev->isp_ver != ISP_V20 && dev->isp_ver != ISP_V21))
 		return;
 
 	atomic_set(&dev->hdr.refcnt, 0);
@@ -156,7 +158,8 @@ int hdr_update_dmatx_buf(struct rkisp_device *dev)
 	if (!dev->active_sensor ||
 	    (dev->active_sensor &&
 	     dev->active_sensor->mbus.type != V4L2_MBUS_CSI2) ||
-	    (dev->isp_inp & INP_CIF))
+	    (dev->isp_inp & INP_CIF) ||
+	    (dev->isp_ver != ISP_V20 && dev->isp_ver != ISP_V21))
 		return 0;
 
 	for (i = RKISP_STREAM_DMATX0; i <= RKISP_STREAM_DMATX2; i++) {
@@ -217,12 +220,14 @@ int hdr_config_dmatx(struct rkisp_device *dev)
 {
 	struct rkisp_stream *stream;
 	struct v4l2_pix_format_mplane pixm;
+	u32 memory = 0;
 
 	if (atomic_inc_return(&dev->hdr.refcnt) > 1 ||
 	    !dev->active_sensor ||
 	    (dev->active_sensor &&
 	     dev->active_sensor->mbus.type != V4L2_MBUS_CSI2) ||
-	    (dev->isp_inp & INP_CIF))
+	    (dev->isp_inp & INP_CIF) ||
+	    (dev->isp_ver != ISP_V20 && dev->isp_ver != ISP_V21))
 		return 0;
 
 	rkisp_create_hdr_buf(dev);
@@ -266,6 +271,7 @@ int hdr_config_dmatx(struct rkisp_device *dev)
 			stream->ops->config_mi(stream);
 
 		if (!dev->dmarx_dev.trigger) {
+			memory = stream->memory;
 			pixm = stream->out_fmt;
 			stream = &dev->dmarx_dev.stream[RKISP_STREAM_RAWRD2];
 			rkisp_dmarx_set_fmt(stream, pixm);
@@ -274,7 +280,7 @@ int hdr_config_dmatx(struct rkisp_device *dev)
 	}
 
 	if (dev->hdr.op_mode != HDR_NORMAL && !dev->dmarx_dev.trigger) {
-		raw_rd_ctrl(dev->base_addr, dev->csi_dev.memory << 2);
+		raw_rd_ctrl(dev->base_addr, memory << 2);
 		if (pixm.width && pixm.height)
 			rkisp_rawrd_set_pic_size(dev, pixm.width, pixm.height);
 	}
@@ -289,7 +295,8 @@ void hdr_stop_dmatx(struct rkisp_device *dev)
 	    !dev->active_sensor ||
 	    (dev->active_sensor &&
 	     dev->active_sensor->mbus.type != V4L2_MBUS_CSI2) ||
-	    (dev->isp_inp & INP_CIF))
+	    (dev->isp_inp & INP_CIF) ||
+	    (dev->isp_ver != ISP_V20 && dev->isp_ver != ISP_V21))
 		return;
 
 	if (dev->hdr.op_mode == HDR_FRAMEX2_DDR ||
@@ -341,7 +348,12 @@ void rkisp_config_dmatx_valid_buf(struct rkisp_device *dev)
 	struct rkisp_device *isp;
 	u32 i, j;
 
-	if (!hw->dummy_buf.mem_priv)
+	if (!hw->dummy_buf.mem_priv ||
+	    !dev->active_sensor ||
+	    (dev->active_sensor &&
+	     dev->active_sensor->mbus.type != V4L2_MBUS_CSI2) ||
+	    (dev->isp_inp & INP_CIF) ||
+	    (dev->isp_ver != ISP_V20 && dev->isp_ver != ISP_V21))
 		return;
 	/* dmatx buf update by mi force or oneself frame end,
 	 * for async dmatx enable need to update to valid buf first.
@@ -957,7 +969,7 @@ static int rkisp_set_fmt(struct rkisp_stream *stream,
 
 		if ((dev->isp_ver == ISP_V20 ||
 		     dev->isp_ver == ISP_V21) &&
-		    !dev->csi_dev.memory &&
+		    !stream->memory &&
 		    fmt->fmt_type == FMT_BAYER &&
 		    stream->id != RKISP_STREAM_MP &&
 		    stream->id != RKISP_STREAM_SP)
@@ -1130,6 +1142,50 @@ static int rkisp_enum_framesizes(struct file *file, void *prov,
 	}
 
 	return 0;
+}
+
+static long rkisp_ioctl_default(struct file *file, void *fh,
+				bool valid_prio, unsigned int cmd, void *arg)
+{
+	struct rkisp_stream *stream = video_drvdata(file);
+	long ret = 0;
+
+	if (!arg)
+		return -EINVAL;
+
+	switch (cmd) {
+	case RKISP_CMD_GET_CSI_MEMORY_MODE:
+		if (stream->id != RKISP_STREAM_DMATX0 &&
+		    stream->id != RKISP_STREAM_DMATX1 &&
+		    stream->id != RKISP_STREAM_DMATX2 &&
+		    stream->id != RKISP_STREAM_DMATX3)
+			ret = -EINVAL;
+		else if (stream->memory == 0)
+			*(int *)arg = CSI_MEM_COMPACT;
+		else if (stream->memory == SW_CSI_RAW_WR_SIMG_MODE)
+			*(int *)arg = CSI_MEM_WORD_BIG_ALIGN;
+		else
+			*(int *)arg = CSI_MEM_WORD_LITTLE_ALIGN;
+		break;
+	case RKISP_CMD_SET_CSI_MEMORY_MODE:
+		if (stream->id != RKISP_STREAM_DMATX0 &&
+		    stream->id != RKISP_STREAM_DMATX1 &&
+		    stream->id != RKISP_STREAM_DMATX2 &&
+		    stream->id != RKISP_STREAM_DMATX3)
+			ret = -EINVAL;
+		else if (*(int *)arg == CSI_MEM_COMPACT)
+			stream->memory = 0;
+		else if (*(int *)arg == CSI_MEM_WORD_BIG_ALIGN)
+			stream->memory = SW_CSI_RAW_WR_SIMG_MODE;
+		else
+			stream->memory =
+				SW_CSI_RWA_WR_SIMG_SWP | SW_CSI_RAW_WR_SIMG_MODE;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	return ret;
 }
 
 static int rkisp_enum_frameintervals(struct file *file, void *fh,
@@ -1313,7 +1369,7 @@ static int rkisp_querycap(struct file *file, void *priv,
 		 stream->ispdev->isp_ver >> 4);
 	snprintf(cap->bus_info, sizeof(cap->bus_info),
 		 "platform:%s", dev_name(dev));
-
+	cap->version = RKISP_DRIVER_VERSION;
 	return 0;
 }
 
@@ -1337,6 +1393,7 @@ static const struct v4l2_ioctl_ops rkisp_v4l2_ioctl_ops = {
 	.vidioc_querycap = rkisp_querycap,
 	.vidioc_enum_frameintervals = rkisp_enum_frameintervals,
 	.vidioc_enum_framesizes = rkisp_enum_framesizes,
+	.vidioc_default = rkisp_ioctl_default,
 };
 
 void rkisp_unregister_stream_vdev(struct rkisp_stream *stream)

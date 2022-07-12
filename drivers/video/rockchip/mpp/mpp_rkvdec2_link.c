@@ -497,6 +497,8 @@ static int rkvdec2_link_finish(struct mpp_dev *mpp, struct mpp_task *mpp_task)
 		n = part[i].reg_num;
 		memcpy(&task->reg[s], &tb_reg[off], n * sizeof(u32));
 	}
+	/* revert hack for irq status */
+	task->reg[RKVDEC_REG_INT_EN_INDEX] = task->irq_status;
 
 	mpp_debug_leave();
 
@@ -574,7 +576,7 @@ static int rkvdec_link_isr_recv_task(struct mpp_dev *mpp,
 		mpp_dbg_link_flow("slot %d rd task %d\n", idx,
 				  mpp_task->task_index);
 
-		task->irq_status = irq_status;
+		task->irq_status = irq_status ? irq_status : mpp->irq_status;
 
 		cancel_delayed_work_sync(&mpp_task->timeout_work);
 		set_bit(TASK_STATE_HANDLE, &mpp_task->state);
@@ -665,7 +667,6 @@ static int rkvdec2_link_reset(struct mpp_dev *mpp)
 	rockchip_dmcfreq_unlock();
 	mutex_unlock(&dec->sip_reset_lock);
 
-	mpp_iommu_detach(mpp->iommu_info);
 	rockchip_restore_qos(mpp->dev);
 
 	/* Note: if the domain does not change, iommu attach will be return
@@ -674,7 +675,6 @@ static int rkvdec2_link_reset(struct mpp_dev *mpp)
 	 */
 	mpp_iommu_refresh(mpp->iommu_info, mpp->dev);
 
-	mpp_iommu_attach(mpp->iommu_info);
 	mpp_reset_up_write(mpp->reset_group);
 	mpp_iommu_up_write(mpp->iommu_info);
 
@@ -1032,6 +1032,11 @@ static void rkvdec2_link_power_on(struct mpp_dev *mpp)
 			enable_irq(mpp->irq);
 			link_dec->irq_enabled = 1;
 		}
+
+		mpp_clk_set_rate(&dec->aclk_info, CLK_MODE_ADVANCED);
+		mpp_clk_set_rate(&dec->core_clk_info, CLK_MODE_ADVANCED);
+		mpp_clk_set_rate(&dec->cabac_clk_info, CLK_MODE_ADVANCED);
+		mpp_clk_set_rate(&dec->hevc_cabac_clk_info, CLK_MODE_ADVANCED);
 	}
 }
 
@@ -1424,20 +1429,25 @@ done:
 	}
 
 	mutex_lock(&queue->session_lock);
-	if (queue->detach_count) {
-		struct mpp_session *session = NULL, *n;
+	while (queue->detach_count) {
+		struct mpp_session *session = NULL;
 
-		mpp_dbg_session("%s detach count %d start\n",
-				dev_name(mpp->dev), queue->detach_count);
-
-		list_for_each_entry_safe(session, n, &queue->session_detach,
-					 session_link) {
-			if (!mpp_session_deinit(session))
-				queue->detach_count--;
+		session = list_first_entry_or_null(&queue->session_detach, struct mpp_session,
+				session_link);
+		if (session) {
+			list_del_init(&session->session_link);
+			queue->detach_count--;
 		}
 
-		mpp_dbg_session("%s detach count %d done\n", dev_name(mpp->dev),
-				queue->detach_count);
+		mutex_unlock(&queue->session_lock);
+
+		if (session) {
+			mpp_dbg_session("%s detach count %d\n", dev_name(mpp->dev),
+					queue->detach_count);
+			mpp_session_deinit(session);
+		}
+
+		mutex_lock(&queue->session_lock);
 	}
 	mutex_unlock(&queue->session_lock);
 }
