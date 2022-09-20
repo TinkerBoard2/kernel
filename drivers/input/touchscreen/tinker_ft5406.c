@@ -270,7 +270,6 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 	struct tinker_ft5406_data *ts_data;
 	struct input_dev *input_dev;
 	struct device_node *np = client->dev.of_node;
-	char ts_name[20];
 	int ret = 0, timeout = 10, i2c_id = 0, dsi_id = 0;
 
 	LOG_INFO("address = 0x%x\n", client->addr);
@@ -324,10 +323,7 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 		goto input_allocate_failed;
 	}
 
-	snprintf(ts_name, sizeof(ts_name), "fts_ts%d", dsi_id);
-	LOG_INFO("ts name: %s\n", ts_name)
-
-	input_dev->name = ts_name;
+	input_dev->name = FT_INPUT_NAME;
 	input_dev->id.bustype = BUS_I2C;
 	input_dev->dev.parent = &ts_data->client->dev;
 

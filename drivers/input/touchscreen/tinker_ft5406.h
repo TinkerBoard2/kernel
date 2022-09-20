@@ -37,6 +37,8 @@
 #define FT_TOUCH_DOWN		0
 #define FT_TOUCH_CONTACT	2
 
+#define FT_INPUT_NAME "fts_ts"
+
 struct ts_event {
 	u16 au16_x[MAX_TOUCH_POINTS]; /*x coordinate */
 	u16 au16_y[MAX_TOUCH_POINTS]; /*y coordinate */
